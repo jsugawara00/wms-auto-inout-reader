@@ -1,0 +1,25 @@
+# ローカル開発用 Postgres（本番は Neon Postgres）
+# 認証情報は開発専用値。ホスト側ポートは 5433（既存ローカルPostgresとの衝突回避）。
+# スキーマ適用は `npm run db:apply`、デモシードは `npm run db:seed`。
+services:
+  db:
+    image: postgres:16
+    container_name: wms-remake-postgres
+    environment:
+      POSTGRES_DB: wms
+      POSTGRES_USER: wms
+      POSTGRES_PASSWORD: wmsdev
+      TZ: Asia/Tokyo
+      PGTZ: Asia/Tokyo
+    ports:
+      - "127.0.0.1:5433:5432"
+    volumes:
+      - wms_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U wms -d wms"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  wms_pg_data:

@@ -1,0 +1,45 @@
+# dependencies
+/node_modules
+/.pnp
+.pnp.*
+
+# testing
+/coverage
+
+# next.js
+/.next/
+/out/
+
+# production
+/build
+
+# misc
+.DS_Store
+*.pem
+
+# debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# env files
+.env*
+!.env.example
+
+# vercel
+.vercel
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts
+
+# ============================================================
+# private: GitHubへ公開しない内部資料（模倣防止）
+#   構造（コード骨格・スキーマ）は公開OK。
+#   企画書類・進行メモ・業務判断の記録は非公開。
+# ============================================================
+/docs/plan/
+KICKOFF.md
+TODO.md
+/docs/internal/
