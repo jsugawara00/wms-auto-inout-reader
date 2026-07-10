@@ -46,6 +46,12 @@ export default function RootLayout({
             <Link href="/closing" className="hover:underline">
               月末確定
             </Link>
+            <Link href="/masters/shippers" className="hover:underline">
+              荷主マスタ
+            </Link>
+            <Link href="/masters/items" className="hover:underline">
+              商品マスタ
+            </Link>
             <span className="ml-auto text-xs text-neutral-500">
               内容の確定は入力担当の操作で行います
             </span>
