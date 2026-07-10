@@ -2,6 +2,9 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
+import { ClerkProvider } from "@clerk/nextjs";
+import { clerkEnabled } from "@/lib/auth";
+import { AuthControls } from "./auth-controls";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -18,11 +21,7 @@ export const metadata: Metadata = {
   description: "半自動 入出庫・在庫管理ツール",
 };
 
-export default function RootLayout({
-  children,
-}: Readonly<{
-  children: React.ReactNode;
-}>) {
+function Shell({ children }: { children: React.ReactNode }) {
   return (
     <html
       lang="ja"
@@ -30,7 +29,7 @@ export default function RootLayout({
     >
       <body className="min-h-full flex flex-col">
         <header className="border-b border-neutral-200 print:hidden dark:border-neutral-800">
-          <nav className="mx-auto flex max-w-5xl items-center gap-6 px-4 py-3 text-sm">
+          <nav className="mx-auto flex max-w-5xl flex-wrap items-center gap-x-6 gap-y-2 px-4 py-3 text-sm">
             <Link href="/" className="font-bold">
               入出庫・在庫管理
             </Link>
@@ -52,13 +51,27 @@ export default function RootLayout({
             <Link href="/masters/items" className="hover:underline">
               商品マスタ
             </Link>
-            <span className="ml-auto text-xs text-neutral-500">
-              内容の確定は入力担当の操作で行います
-            </span>
+            <AuthControls />
           </nav>
         </header>
         <main className="mx-auto w-full max-w-5xl flex-1 px-4 py-6">{children}</main>
       </body>
     </html>
   );
+}
+
+export default function RootLayout({
+  children,
+}: Readonly<{
+  children: React.ReactNode;
+}>) {
+  // Clerk のキーがあれば ClerkProvider で包む。無ければ素の Shell（デモ・逃げ道）。
+  if (clerkEnabled()) {
+    return (
+      <ClerkProvider>
+        <Shell>{children}</Shell>
+      </ClerkProvider>
+    );
+  }
+  return <Shell>{children}</Shell>;
 }

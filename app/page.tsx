@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { db } from "@/lib/db";
-import { currentOperator, currentRole } from "@/lib/auth";
+import { currentOperator, currentRole, clerkEnabled } from "@/lib/auth";
 import { uploadPdfAction, runMailIntakeAction } from "./intake-actions";
 import { switchSessionAction } from "./session-actions";
 
@@ -99,12 +99,16 @@ export default async function Home({ searchParams }: Props) {
       </p>
 
       <section className="space-y-2 rounded border border-neutral-200 p-4 text-sm dark:border-neutral-800">
-        <h2 className="font-bold">担当者・権限（デモ切替）</h2>
+        <h2 className="font-bold">担当者・権限{clerkEnabled() ? "" : "（デモ切替）"}</h2>
         <p className="text-neutral-500">
           現在：<span className="font-mono">{operator}</span> ／ ロール{" "}
           <strong>{role === "admin" ? "admin（マスタ登録可・その場確定）" : "operator（保留＋登録依頼）"}</strong>
-          。本番では Clerk のログインユーザー属性が正になります。
+          。
+          {clerkEnabled()
+            ? "ロール・担当者コードは Clerk のユーザー属性（publicMetadata）が正です。"
+            : "本番では Clerk のログインユーザー属性が正になります。"}
         </p>
+        {clerkEnabled() ? null : (
         <form action={switchSessionAction} className="flex flex-wrap items-end gap-2">
           <label>
             担当者コード
@@ -132,6 +136,7 @@ export default async function Home({ searchParams }: Props) {
             切り替え
           </button>
         </form>
+        )}
       </section>
     </div>
   );

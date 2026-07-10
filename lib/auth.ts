@@ -3,9 +3,11 @@ import { cookies } from "next/headers";
 // 認証・権限（企画書 9 最小権限 / 仕様候補§荷主確定の設計）
 // ロール2種：admin（マスタ登録可＝その場確定）／operator（保留＋登録依頼通知）。
 //
-// ここは Clerk 導入前のフォールバック実装（担当者コード＋ロールを Cookie で保持）。
-// Clerk 導入時はこのモジュールだけ差し替えれば全画面・全アクションが追従する
-// （逃げ道：Clerkで詰まってもこの担当者コード方式でデプロイできる）。
+// 二段構え：
+//  - CLERK_SECRET_KEY が設定されていれば Clerk のログインユーザーを正とする
+//    （担当者コード＝publicMetadata.operatorCode／ロール＝publicMetadata.role）。
+//  - 未設定なら担当者コード＋ロールを Cookie で保持するフォールバック
+//    （逃げ道：Clerkで詰まってもデプロイできる。デモも鍵なしで動く）。
 // 担当者コード（operators.code）は監査表示の可読性のため常に維持する。
 
 export type Role = "admin" | "operator";
@@ -13,15 +15,38 @@ export type Role = "admin" | "operator";
 const OPERATOR_COOKIE = "wms_operator";
 const ROLE_COOKIE = "wms_role";
 
-/** 現在の担当者コード（未設定時はデモ担当 op01） */
+export function clerkEnabled(): boolean {
+  return !!process.env.CLERK_SECRET_KEY;
+}
+
+/** Clerk のセッションから担当者コードとロールを読む（未ログイン・未設定は null） */
+async function clerkIdentity(): Promise<{ operator: string; role: Role } | null> {
+  if (!clerkEnabled()) return null;
+  try {
+    const { auth } = await import("@clerk/nextjs/server");
+    const { sessionClaims, userId } = await auth();
+    if (!userId) return null;
+    const meta = (sessionClaims?.metadata ?? {}) as { operatorCode?: string; role?: string };
+    return {
+      operator: meta.operatorCode?.trim() || `clerk:${userId.slice(-6)}`,
+      role: meta.role === "operator" ? "operator" : "admin",
+    };
+  } catch {
+    return null;
+  }
+}
+
+/** 現在の担当者コード */
 export async function currentOperator(): Promise<string> {
+  const id = await clerkIdentity();
+  if (id) return id.operator;
   const store = await cookies();
   return store.get(OPERATOR_COOKIE)?.value?.trim() || "op01";
 }
 
-/** 担当者コードを記憶（サーバーアクション内でのみ呼べる） */
+/** 担当者コードを記憶（Cookieフォールバック時のみ意味を持つ。サーバーアクション内で呼ぶ） */
 export async function rememberOperator(code: string): Promise<void> {
-  if (!code.trim()) return;
+  if (!code.trim() || clerkEnabled()) return;
   const store = await cookies();
   store.set(OPERATOR_COOKIE, code.trim(), { path: "/", sameSite: "lax" });
 }
@@ -31,11 +56,14 @@ export async function rememberOperator(code: string): Promise<void> {
  * デモで operator の挙動を確認できるよう Cookie で切替可能にしている。
  */
 export async function currentRole(): Promise<Role> {
+  const id = await clerkIdentity();
+  if (id) return id.role;
   const store = await cookies();
   return store.get(ROLE_COOKIE)?.value === "operator" ? "operator" : "admin";
 }
 
 export async function setRole(role: Role): Promise<void> {
+  if (clerkEnabled()) return;
   const store = await cookies();
   store.set(ROLE_COOKIE, role, { path: "/", sameSite: "lax" });
 }
