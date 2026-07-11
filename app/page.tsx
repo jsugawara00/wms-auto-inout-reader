@@ -6,9 +6,9 @@ import { switchSessionAction } from "./session-actions";
 import { UploadBox } from "./upload-box";
 
 export const dynamic = "force-dynamic";
-// PDF読取（Claude API）は1件あたり数十秒かかるため、アップロードの
-// Server Action がタイムアウトしないよう上限を引き上げる
-export const maxDuration = 60;
+// PDF読取（Claude API）は1件あたり数十秒かかるため、アップロード・メール取込の
+// Server Action がタイムアウトしないよう上限を引き上げる（複数件の一括処理を想定）
+export const maxDuration = 300;
 
 async function getCounts() {
   const rows = await db().rows<{ status: string; cnt: number }>(

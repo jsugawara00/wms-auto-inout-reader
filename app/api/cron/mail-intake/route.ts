@@ -9,7 +9,7 @@ import { notifyIntakeResults } from "@/lib/intake";
 //       手動取込は画面のボタンが常にバックアップになる。
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 60;
+export const maxDuration = 300;
 
 export async function GET(request: Request): Promise<Response> {
   const secret = process.env.CRON_SECRET;
