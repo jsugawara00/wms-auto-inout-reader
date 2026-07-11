@@ -189,7 +189,11 @@ export async function resolveLineAction(formData: FormData): Promise<void> {
   const { resolveLine } = await import("@/lib/resolve");
   const choice =
     choiceRaw === "new"
-      ? ({ type: "new" } as const)
+      ? ({
+          type: "new",
+          name: String(formData.get("newItemName") ?? "").trim() || undefined,
+          spec: String(formData.get("newItemSpec") ?? "").trim(),
+        } as const)
       : ({ type: "existing", itemId: Number(choiceRaw) } as const);
 
   if (choice.type === "existing" && !Number.isInteger(choice.itemId)) {

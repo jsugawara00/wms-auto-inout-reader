@@ -379,9 +379,7 @@ export default async function SlipDetailPage({ params, searchParams }: Props) {
                       </option>
                     ))}
                     {isAdmin && (
-                      <option value="new">
-                        新規品目として登録（{line.item_name_raw} {line.spec_raw || "規格なし"}）
-                      </option>
+                      <option value="new">新規品目として登録（下の品名・規格で）</option>
                     )}
                   </select>
                 </label>
@@ -400,6 +398,29 @@ export default async function SlipDetailPage({ params, searchParams }: Props) {
                   この内容で解消
                 </button>
               </div>
+              {isAdmin && (
+                <div className="flex flex-wrap items-end gap-2 border-t border-red-200 pt-2 dark:border-red-900">
+                  <span className="text-xs text-neutral-600 dark:text-neutral-400">
+                    「新規品目として登録」の場合の登録内容（読取値から修正できます。修正は履歴に残ります）：
+                  </span>
+                  <label>
+                    品名
+                    <input
+                      name="newItemName"
+                      defaultValue={line.item_name_raw}
+                      className="ml-1 w-48 rounded border px-1 py-0.5 dark:bg-neutral-900"
+                    />
+                  </label>
+                  <label>
+                    規格
+                    <input
+                      name="newItemSpec"
+                      defaultValue={line.spec_raw}
+                      className="ml-1 w-24 rounded border px-1 py-0.5 dark:bg-neutral-900"
+                    />
+                  </label>
+                </div>
+              )}
             </form>
           )}
           </div>

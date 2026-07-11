@@ -36,7 +36,11 @@ export const ExtractionSchema = z.object({
     .describe("読めない箇所・気になる点・単位の曖昧さなど、担当に伝えるメモ"),
   lines: z.array(
     z.object({
-      item_name: z.string().describe("品名。読み取れた表記のまま"),
+      item_name: z
+        .string()
+        .describe(
+          "品名。読み取れた表記のまま。ただし品名欄に規格・容量（1kg・1.80g等）が併記されている場合は品名に含めず spec へ分離する（例:'みかん缶詰(1.80g)'→品名'みかん缶詰'・spec'1.80g'）"
+        ),
       spec: z.string().describe("規格（1kg・500g・1.8m等）。無ければ空文字"),
       production_date: z
         .string()
