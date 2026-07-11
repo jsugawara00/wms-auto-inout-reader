@@ -11,7 +11,8 @@
     "db:apply": "tsx scripts/apply-sql.mts db/schema.sql",
     "db:seed": "tsx scripts/apply-sql.mts db/seed.sql",
     "verify:core": "tsx scripts/verify-core.mts",
-    "verify:masters": "tsx scripts/verify-masters.mts"
+    "verify:masters": "tsx scripts/verify-masters.mts",
+    "verify:billing": "tsx scripts/verify-billing.mts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.110.0",
