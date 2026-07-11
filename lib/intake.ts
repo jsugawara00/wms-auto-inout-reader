@@ -25,6 +25,8 @@ export interface IntakeResult {
   confidence?: "high" | "medium" | "low";
   shipperName?: string | null;
   slipTypeLabel?: string;
+  /** 明細を読み取れず伝票を保留で起票した（依頼内容が読取対象外の添付にある可能性） */
+  noLines?: boolean;
 }
 
 /** 指紋：伝票番号＋正規化した明細（品名・規格・数量・製造日・ロット）から生成 */
@@ -72,7 +74,13 @@ interface CreatedSlip {
   slipId: number;
   holdCount: number;
   shipperName: string | null;
+  noLines: boolean;
 }
+
+/** 明細0行で起票する場合の保留理由（1-6：オフィス文書添付は未対応のため） */
+const NO_LINES_HOLD_REASON =
+  "明細を読み取れませんでした。依頼内容が本文以外の添付（Excel・Word等）にある可能性があります。" +
+  "PDF化して再取込するか、依頼元へ内容を確認してください。";
 
 /** 抽出結果1件を伝票として起票する */
 async function createSlip(
@@ -96,19 +104,24 @@ async function createSlip(
     const movementDate =
       parseDateOnly(ex.movement_date) ?? parseDateOnly(ex.requested_at);
 
+    // 明細0行（依頼内容が読取対象外の添付にある等）は、行き止まりの「未処理」で
+    // 置かず、最初から保留＋理由付きで起票する（黙って捨てない・関門で受け止める）
+    const noLines = ex.lines.length === 0;
+
     const slipIns = await conn.rows<{ id: number }>(
       `INSERT INTO slips (slip_type, source_type, slip_number, fingerprint, status,
                           shipper_id, requested_at, movement_date, received_at, source_file,
-                          extracted_json, confidence, note)
-       VALUES (:slipType, :sourceType, :slipNumber, :fingerprint, 'unprocessed',
+                          extracted_json, confidence, note, hold_reason)
+       VALUES (:slipType, :sourceType, :slipNumber, :fingerprint, :status,
                :shipperId, :requestedAt, COALESCE(:movementDate::date, jst_now()::date),
-               jst_now(), :sourceFile, :extractedJson, :confidence, :note)
+               jst_now(), :sourceFile, :extractedJson, :confidence, :note, :holdReason)
        RETURNING id`,
       {
         slipType: ex.slip_type,
         sourceType,
         slipNumber: ex.slip_number,
         fingerprint: buildFingerprint(ex),
+        status: noLines ? "hold" : "unprocessed",
         shipperId,
         requestedAt: parseDateTime(ex.requested_at),
         movementDate,
@@ -116,6 +129,7 @@ async function createSlip(
         extractedJson: JSON.stringify(ex), // 監査用に生結果を保持
         confidence: ex.confidence,
         note,
+        holdReason: noLines ? NO_LINES_HOLD_REASON : null,
       }
     );
     const slipId = slipIns[0].id;
@@ -169,7 +183,14 @@ async function createSlip(
        VALUES ('slip', :slipId, 'create', 'PDF取込により起票（確定は入力担当の操作）', 'system:intake')`,
       { slipId }
     );
-    return { slipId, holdCount, shipperName: rule?.shipperName ?? null };
+    if (noLines) {
+      await conn.exec(
+        `INSERT INTO edit_logs (target_type, target_id, action, reason, operator)
+         VALUES ('slip', :slipId, 'hold', :reason, 'system:intake')`,
+        { slipId, reason: NO_LINES_HOLD_REASON }
+      );
+    }
+    return { slipId, holdCount, shipperName: rule?.shipperName ?? null, noLines };
   });
 }
 
@@ -225,16 +246,20 @@ export async function intakeExtraction(
     sourceRef,
     result: "slip_created",
     slipId: created.slipId,
+    note: created.noLines ? "明細を読み取れず保留で起票" : null,
   });
   return {
     file: sourceRef,
     result: "slip_created",
     slipId: created.slipId,
-    message: `伝票 #${created.slipId} を起票しました（確認フォームで確定してください）。`,
+    message: created.noLines
+      ? `伝票 #${created.slipId} を起票しましたが、明細を読み取れなかったため保留にしました（依頼内容が添付のExcel等にある可能性）。内容を確認してください。`
+      : `伝票 #${created.slipId} を起票しました（確認フォームで確定してください）。`,
     holdCount: created.holdCount,
     confidence: ex.confidence,
     shipperName: created.shipperName,
     slipTypeLabel: ex.slip_type === "inbound" ? "入庫" : "出庫",
+    noLines: created.noLines,
   };
 }
 
@@ -278,6 +303,7 @@ export function buildIntakeNotification(results: IntakeResult[]): string {
     lines.push(`\n*届いています（${created.length}件）*`);
     for (const r of created) {
       const flags: string[] = [];
+      if (r.noLines) flags.push("明細を読取れず保留");
       if ((r.holdCount ?? 0) > 0) flags.push(`保留${r.holdCount}行`);
       if (r.confidence === "low") flags.push("読取確信度: 低");
       const mark = flags.length > 0 ? ` ⚠️ 要確認（${flags.join("・")}）` : "";

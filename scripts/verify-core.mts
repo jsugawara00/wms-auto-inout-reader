@@ -123,6 +123,28 @@ let ex1SlipId = 0;
   check("指紋が決定的", buildFingerprint(ex1) === buildFingerprint(ex1));
 }
 
+console.log("\n— 取込: 明細0行は保留で起票（読取対象外の添付ケース） —");
+{
+  const exNoLines: Extraction = {
+    ...ex1,
+    slip_number: "MN-20260711-06",
+    note: "明細は添付のExcelを参照とのこと",
+    lines: [],
+  };
+  const r = await intakeExtraction(exNoLines, "verify-nolines.pdf", "fax");
+  check("起票される（黙って捨てない）", r.result === "slip_created", r);
+  check("noLines フラグが立つ", r.noLines === true, r);
+  check("メッセージが保留起票を伝える", r.message.includes("保留"), r.message);
+  const d = await getSlipDetail(r.slipId!);
+  check("ステータスは保留", d?.slip.status === "hold", d?.slip.status);
+  check("保留理由に添付の可能性が明記", (d?.slip.hold_reason ?? "").includes("Excel"), d?.slip.hold_reason);
+  const c = await confirmSlip({
+    slipId: r.slipId!, operator: "op01", expectedVersion: d!.slip.version,
+    allowNegative: false, allowDateMismatch: true,
+  });
+  check("保留のままは確定不可", !c.ok && c.kind === "invalid", c);
+}
+
 console.log("\n— 取込: 無関係文書の記録（黙って捨てない） —");
 {
   const exIrr: Extraction = { ...ex1, is_relevant: false, slip_type: null, note: "営業案内", lines: [] };
@@ -191,6 +213,7 @@ let ex2SlipId = 0;
   const d3 = await getSlipDetail(ex2SlipId);
   const c = await confirmSlip({
     slipId: ex2SlipId, operator: "op02", expectedVersion: d3!.slip.version, allowNegative: false,
+    allowDateMismatch: true, // 入出庫日はテスト実行日と異なるため承認して通す
   });
   check("取込→解消→確定の一本道が通る", c.ok === true, c);
   check("在庫が生まれる", (await stockQty("lot_no = :l", { l: "YS-2606" })) === 30);

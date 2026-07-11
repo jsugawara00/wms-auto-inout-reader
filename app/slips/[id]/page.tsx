@@ -291,6 +291,16 @@ export default async function SlipDetailPage({ params, searchParams }: Props) {
 
       <section className="space-y-4">
         <h2 className="font-bold">明細（{lines.length}行）</h2>
+        {lines.length === 0 && (
+          <div className="rounded border border-red-300 bg-red-50 p-3 text-sm dark:border-red-800 dark:bg-red-950">
+            <p className="font-bold text-red-700 dark:text-red-300">明細がありません</p>
+            <p className="mt-1 text-neutral-600 dark:text-neutral-400">
+              依頼内容が本文以外の添付（Excel・Word等）にある場合、現在は読み取れません。
+              依頼書をPDF化してアップロードから再取込するか、依頼元へ内容を確認してください。
+              この伝票は明細が無いため確定できません（不要になった場合は保留のままにしておけます）。
+            </p>
+          </div>
+        )}
         {lines.map((line) => (
           <div
             key={line.id}
