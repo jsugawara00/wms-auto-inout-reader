@@ -264,18 +264,82 @@ export async function calcMonthlyBilling(
 }
 
 // ------------------------------------------------------------------
-// 請求書の確定（原本不変・二重確定拒否・履歴記録＝月末表と同じ流儀）
+// 請求書の「締め → 確認フォーム → 発行（印刷可）」（1-15 / 1-16）
+// - 締める＝計算値を下書き(draft)として保存（原本。amount は不変）
+// - 確認フォームで：行金額の調整（adjusted_amount＝表示調整層）／例外行(manual)の追加・削除／
+//   在庫を直した後の再計算（recompute）ができる（すべて draft のときのみ）
+// - 発行(issue)で issued に。以後は不変・印刷可（月末表・表示値修正と同じ思想）
 // ------------------------------------------------------------------
 
-export type FinalizeInvoiceResult =
+export type InvoiceActionResult =
   | { ok: true; message: string; invoiceId: number }
   | { ok: false; message: string };
 
-export async function finalizeInvoice(input: {
+type Conn = Parameters<Parameters<typeof withTransaction>[0]>[0];
+
+/** 計算プレビューの明細を invoice_lines へ書き出す（storage/handling_in/handling_out） */
+async function writeComputedLines(
+  conn: Conn,
+  invoiceId: number,
+  preview: BillingPreview,
+  startLineNo: number
+): Promise<number> {
+  let lineNo = startLineNo;
+  for (const it of preview.items) {
+    for (const p of it.periods) {
+      if (p.billableQty === 0 && p.amount === 0) continue; // 空期はスキップ
+      lineNo++;
+      await conn.exec(
+        `INSERT INTO invoice_lines (invoice_id, line_no, category, item_name, spec, period_no, quantity, unit_price, amount)
+         VALUES (:invoiceId, :lineNo, 'storage', :itemName, :spec, :periodNo, :quantity, :unitPrice, :amount)`,
+        { invoiceId, lineNo, itemName: it.itemName, spec: it.spec, periodNo: p.periodNo, quantity: p.billableQty, unitPrice: it.storageRate, amount: p.amount }
+      );
+    }
+    if (it.monthInQty > 0) {
+      lineNo++;
+      await conn.exec(
+        `INSERT INTO invoice_lines (invoice_id, line_no, category, item_name, spec, period_no, quantity, unit_price, amount)
+         VALUES (:invoiceId, :lineNo, 'handling_in', :itemName, :spec, NULL, :quantity, :unitPrice, :amount)`,
+        { invoiceId, lineNo, itemName: it.itemName, spec: it.spec, quantity: it.monthInQty, unitPrice: it.handlingInRate, amount: it.handlingInAmount }
+      );
+    }
+    if (it.monthOutQty > 0) {
+      lineNo++;
+      await conn.exec(
+        `INSERT INTO invoice_lines (invoice_id, line_no, category, item_name, spec, period_no, quantity, unit_price, amount)
+         VALUES (:invoiceId, :lineNo, 'handling_out', :itemName, :spec, NULL, :quantity, :unitPrice, :amount)`,
+        { invoiceId, lineNo, itemName: it.itemName, spec: it.spec, quantity: it.monthOutQty, unitPrice: it.handlingOutRate, amount: it.handlingOutAmount }
+      );
+    }
+  }
+  return lineNo;
+}
+
+/** 請求書合計を明細の表示値（adjusted_amount ?? amount）から再計算して保存 */
+async function recalcInvoiceTotal(conn: Conn, invoiceId: number): Promise<void> {
+  await conn.exec(
+    `UPDATE invoices SET total_amount = (
+       SELECT COALESCE(SUM(COALESCE(adjusted_amount, amount)), 0)
+       FROM invoice_lines WHERE invoice_id = :invoiceId
+     ) WHERE id = :invoiceId`,
+    { invoiceId }
+  );
+}
+
+async function loadDraft(conn: Conn, invoiceId: number): Promise<InvoiceRow | null> {
+  const rows = await conn.rows<InvoiceRow>(
+    "SELECT * FROM invoices WHERE id = :invoiceId FOR UPDATE",
+    { invoiceId }
+  );
+  return rows[0] ?? null;
+}
+
+/** 締める：計算値を下書き(draft)として保存。同一 月×荷主 が既にあれば拒否 */
+export async function createDraftInvoice(input: {
   shipperId: number;
   month: string;
   operator: string;
-}): Promise<FinalizeInvoiceResult> {
+}): Promise<InvoiceActionResult> {
   const { shipperId, month, operator } = input;
   const preview = await calcMonthlyBilling(shipperId, month);
   if ("error" in preview) return { ok: false, message: preview.error };
@@ -283,85 +347,194 @@ export async function finalizeInvoice(input: {
     return { ok: false, message: "対象月に在庫・入出庫が無いため、請求書を作成できません。" };
   }
 
-  return withTransaction(async (conn): Promise<FinalizeInvoiceResult> => {
-    // 同一 月×荷主 の同時確定を防ぐ（advisory lock ＋ UNIQUE 制約の二段）
+  return withTransaction(async (conn): Promise<InvoiceActionResult> => {
     await conn.rows("SELECT pg_advisory_xact_lock(:k1, :k2)", {
-      k1: Number(month.replace("-", "")),
-      k2: shipperId,
+      k1: Number(month.replace("-", "")), k2: shipperId,
     });
-    const dup = await conn.rows<{ id: number }>(
-      "SELECT id FROM invoices WHERE invoice_month = :month AND shipper_id = :shipperId",
+    const dup = await conn.rows<{ id: number; status: string }>(
+      "SELECT id, status FROM invoices WHERE invoice_month = :month AND shipper_id = :shipperId",
       { month, shipperId }
     );
     if (dup.length > 0) {
-      return { ok: false, message: `${month} の「${preview.shipperName}」宛請求書は確定済みです（#${dup[0].id}）。確定後の請求書は不変です。` };
+      const s = dup[0].status === "issued" ? "発行済み" : "作成済み（確認中）";
+      return { ok: false, message: `${month} の「${preview.shipperName}」宛請求書は既に${s}です（#${dup[0].id}）。確認画面から操作してください。` };
     }
 
     const inv = await conn.rows<{ id: number }>(
-      `INSERT INTO invoices (invoice_month, shipper_id, shipper_name, total_amount, note, finalized_by)
-       VALUES (:month, :shipperId, :shipperName, :totalAmount, :note, :operator)
+      `INSERT INTO invoices (invoice_month, shipper_id, shipper_name, total_amount, note, status, finalized_by)
+       VALUES (:month, :shipperId, :shipperName, :totalAmount, :note, 'draft', :operator)
        RETURNING id`,
-      {
-        month,
-        shipperId,
-        shipperName: preview.shipperName,
-        totalAmount: preview.totalAmount,
-        note: preview.warnings.join(" / "),
-        operator,
-      }
+      { month, shipperId, shipperName: preview.shipperName, totalAmount: preview.totalAmount, note: preview.warnings.join(" / "), operator }
     );
     const invoiceId = inv[0].id;
+    await writeComputedLines(conn, invoiceId, preview, 0);
+    await conn.exec(
+      `INSERT INTO edit_logs (target_type, target_id, action, reason, operator)
+       VALUES ('invoice', :invoiceId, 'create', :reason, :operator)`,
+      { invoiceId, reason: `${month} 「${preview.shipperName}」宛請求書を締め（下書き作成・合計 ${preview.totalAmount} 円）`, operator }
+    );
+    return { ok: true, invoiceId, message: `${month} の請求書を締めました（確認画面で内容を確認してください）。` };
+  });
+}
 
-    let lineNo = 0;
-    for (const it of preview.items) {
-      for (const p of it.periods) {
-        if (p.billableQty === 0 && p.amount === 0) continue; // 空期はスキップ
-        lineNo++;
-        await conn.exec(
-          `INSERT INTO invoice_lines (invoice_id, line_no, category, item_name, spec, period_no, quantity, unit_price, amount)
-           VALUES (:invoiceId, :lineNo, 'storage', :itemName, :spec, :periodNo, :quantity, :unitPrice, :amount)`,
-          {
-            invoiceId, lineNo,
-            itemName: it.itemName, spec: it.spec,
-            periodNo: p.periodNo, quantity: p.billableQty,
-            unitPrice: it.storageRate, amount: p.amount,
-          }
-        );
-      }
-      if (it.monthInQty > 0) {
-        lineNo++;
-        await conn.exec(
-          `INSERT INTO invoice_lines (invoice_id, line_no, category, item_name, spec, period_no, quantity, unit_price, amount)
-           VALUES (:invoiceId, :lineNo, 'handling_in', :itemName, :spec, NULL, :quantity, :unitPrice, :amount)`,
-          {
-            invoiceId, lineNo, itemName: it.itemName, spec: it.spec,
-            quantity: it.monthInQty, unitPrice: it.handlingInRate, amount: it.handlingInAmount,
-          }
-        );
-      }
-      if (it.monthOutQty > 0) {
-        lineNo++;
-        await conn.exec(
-          `INSERT INTO invoice_lines (invoice_id, line_no, category, item_name, spec, period_no, quantity, unit_price, amount)
-           VALUES (:invoiceId, :lineNo, 'handling_out', :itemName, :spec, NULL, :quantity, :unitPrice, :amount)`,
-          {
-            invoiceId, lineNo, itemName: it.itemName, spec: it.spec,
-            quantity: it.monthOutQty, unitPrice: it.handlingOutRate, amount: it.handlingOutAmount,
-          }
-        );
-      }
-    }
+/** 再計算：在庫等の修正後、下書きの計算行を作り直す（例外行 manual は保持） */
+export async function recomputeDraft(input: {
+  invoiceId: number;
+  operator: string;
+}): Promise<InvoiceActionResult> {
+  const { invoiceId, operator } = input;
+  return withTransaction(async (conn): Promise<InvoiceActionResult> => {
+    const inv = await loadDraft(conn, invoiceId);
+    if (!inv) return { ok: false, message: "請求書が見つかりません。" };
+    if (inv.status !== "draft") return { ok: false, message: "発行済みの請求書は再計算できません（不変）。" };
 
+    const preview = await calcMonthlyBilling(inv.shipper_id, inv.invoice_month);
+    if ("error" in preview) return { ok: false, message: preview.error };
+
+    // 計算行（manual以外）を作り直し、例外行は温存。line_no は manual の後ろに採番
+    await conn.exec("DELETE FROM invoice_lines WHERE invoice_id = :invoiceId AND category <> 'manual'", { invoiceId });
+    const maxRows = await conn.rows<{ n: number }>(
+      "SELECT COALESCE(MAX(line_no), 0) AS n FROM invoice_lines WHERE invoice_id = :invoiceId", { invoiceId }
+    );
+    await writeComputedLines(conn, invoiceId, preview, Number(maxRows[0].n));
+    await conn.exec("UPDATE invoices SET note = :note WHERE id = :invoiceId", { note: preview.warnings.join(" / "), invoiceId });
+    await recalcInvoiceTotal(conn, invoiceId);
+    await conn.exec(
+      `INSERT INTO edit_logs (target_type, target_id, action, reason, operator)
+       VALUES ('invoice', :invoiceId, 'update', '在庫等の修正を反映して計算行を再計算（例外行は保持）', :operator)`,
+      { invoiceId, operator }
+    );
+    return { ok: true, invoiceId, message: "在庫等の内容を反映して再計算しました。" };
+  });
+}
+
+/** 行金額の調整（表示値修正。原本 amount は不変・理由必須・履歴） */
+export async function adjustInvoiceLine(input: {
+  lineId: number;
+  adjustedAmount: number;
+  reason: string;
+  operator: string;
+}): Promise<InvoiceActionResult> {
+  const { lineId, adjustedAmount, reason, operator } = input;
+  if (!reason.trim()) return { ok: false, message: "調整理由は必須です。" };
+  if (!Number.isFinite(adjustedAmount)) return { ok: false, message: "金額が不正です。" };
+
+  return withTransaction(async (conn): Promise<InvoiceActionResult> => {
+    const rows = await conn.rows<{ invoice_id: number; amount: number; status: string }>(
+      `SELECT l.invoice_id, l.amount, i.status
+       FROM invoice_lines l JOIN invoices i ON i.id = l.invoice_id
+       WHERE l.id = :lineId FOR UPDATE OF i`,
+      { lineId }
+    );
+    const row = rows[0];
+    if (!row) return { ok: false, message: "明細が見つかりません。" };
+    if (row.status !== "draft") return { ok: false, message: "発行済みの請求書は調整できません（不変）。" };
+
+    await conn.exec(
+      "UPDATE invoice_lines SET adjusted_amount = :adjustedAmount, adjust_reason = :reason WHERE id = :lineId",
+      { adjustedAmount, reason: reason.trim(), lineId }
+    );
+    await recalcInvoiceTotal(conn, row.invoice_id);
+    await conn.exec(
+      `INSERT INTO edit_logs (target_type, target_id, action, field, old_value, new_value, reason, operator)
+       VALUES ('invoice', :invoiceId, 'adjust', 'line_amount', :oldValue, :newValue, :reason, :operator)`,
+      { invoiceId: row.invoice_id, oldValue: String(row.amount), newValue: String(adjustedAmount), reason: reason.trim(), operator }
+    );
+    return { ok: true, invoiceId: row.invoice_id, message: `明細金額を調整しました（原本 ${row.amount} は不変・履歴に記録）。` };
+  });
+}
+
+/** 例外請求行の追加（1-16。別Excel請求の吸収。数量×単価＝金額、円未満切り捨て） */
+export async function addManualLine(input: {
+  invoiceId: number;
+  itemName: string;
+  spec: string;
+  quantity: number;
+  unitPrice: number;
+  operator: string;
+}): Promise<InvoiceActionResult> {
+  const { invoiceId, itemName, spec, quantity, unitPrice, operator } = input;
+  if (!itemName.trim()) return { ok: false, message: "請求項目名を入力してください。" };
+  if (!Number.isFinite(quantity) || !Number.isFinite(unitPrice)) return { ok: false, message: "数量・単価が不正です。" };
+
+  return withTransaction(async (conn): Promise<InvoiceActionResult> => {
+    const inv = await loadDraft(conn, invoiceId);
+    if (!inv) return { ok: false, message: "請求書が見つかりません。" };
+    if (inv.status !== "draft") return { ok: false, message: "発行済みの請求書には追加できません（不変）。" };
+
+    const amount = floor(quantity * unitPrice);
+    const maxRows = await conn.rows<{ n: number }>(
+      "SELECT COALESCE(MAX(line_no), 0) AS n FROM invoice_lines WHERE invoice_id = :invoiceId", { invoiceId }
+    );
+    await conn.exec(
+      `INSERT INTO invoice_lines (invoice_id, line_no, category, item_name, spec, period_no, quantity, unit_price, amount)
+       VALUES (:invoiceId, :lineNo, 'manual', :itemName, :spec, NULL, :quantity, :unitPrice, :amount)`,
+      { invoiceId, lineNo: Number(maxRows[0].n) + 1, itemName: itemName.trim(), spec: spec.trim(), quantity, unitPrice, amount }
+    );
+    await recalcInvoiceTotal(conn, invoiceId);
+    await conn.exec(
+      `INSERT INTO edit_logs (target_type, target_id, action, reason, operator)
+       VALUES ('invoice', :invoiceId, 'update', :reason, :operator)`,
+      { invoiceId, reason: `例外請求行を追加：${itemName.trim()} ${quantity}×${unitPrice}=${amount}円`, operator }
+    );
+    return { ok: true, invoiceId, message: `例外請求行「${itemName.trim()}」を追加しました（${amount} 円）。` };
+  });
+}
+
+/** 例外請求行の削除（manual のみ・draft のみ） */
+export async function deleteManualLine(input: {
+  lineId: number;
+  operator: string;
+}): Promise<InvoiceActionResult> {
+  const { lineId, operator } = input;
+  return withTransaction(async (conn): Promise<InvoiceActionResult> => {
+    const rows = await conn.rows<{ invoice_id: number; category: string; status: string; item_name: string }>(
+      `SELECT l.invoice_id, l.category, l.item_name, i.status
+       FROM invoice_lines l JOIN invoices i ON i.id = l.invoice_id
+       WHERE l.id = :lineId FOR UPDATE OF i`,
+      { lineId }
+    );
+    const row = rows[0];
+    if (!row) return { ok: false, message: "明細が見つかりません。" };
+    if (row.status !== "draft") return { ok: false, message: "発行済みの請求書は編集できません（不変）。" };
+    if (row.category !== "manual") return { ok: false, message: "計算された明細は削除できません（調整で対応してください）。" };
+
+    await conn.exec("DELETE FROM invoice_lines WHERE id = :lineId", { lineId });
+    await recalcInvoiceTotal(conn, row.invoice_id);
+    await conn.exec(
+      `INSERT INTO edit_logs (target_type, target_id, action, reason, operator)
+       VALUES ('invoice', :invoiceId, 'update', :reason, :operator)`,
+      { invoiceId: row.invoice_id, reason: `例外請求行を削除：${row.item_name}`, operator }
+    );
+    return { ok: true, invoiceId: row.invoice_id, message: "例外請求行を削除しました。" };
+  });
+}
+
+/** 発行：draft → issued。以後は不変・印刷可 */
+export async function issueInvoice(input: {
+  invoiceId: number;
+  operator: string;
+}): Promise<InvoiceActionResult> {
+  const { invoiceId, operator } = input;
+  return withTransaction(async (conn): Promise<InvoiceActionResult> => {
+    const inv = await loadDraft(conn, invoiceId);
+    if (!inv) return { ok: false, message: "請求書が見つかりません。" };
+    if (inv.status === "issued") return { ok: false, message: "この請求書は既に発行済みです（不変）。" };
+
+    await recalcInvoiceTotal(conn, invoiceId);
+    await conn.exec(
+      "UPDATE invoices SET status = 'issued', issued_by = :operator, issued_at = jst_now() WHERE id = :invoiceId",
+      { operator, invoiceId }
+    );
+    const totalRows = await conn.rows<{ total_amount: number }>(
+      "SELECT total_amount FROM invoices WHERE id = :invoiceId", { invoiceId }
+    );
     await conn.exec(
       `INSERT INTO edit_logs (target_type, target_id, action, reason, operator)
        VALUES ('invoice', :invoiceId, 'finalize', :reason, :operator)`,
-      {
-        invoiceId,
-        reason: `${month} 「${preview.shipperName}」宛請求書を確定（合計 ${preview.totalAmount} 円・${lineNo}行）`,
-        operator,
-      }
+      { invoiceId, reason: `請求書を発行（確認完了・以後不変・合計 ${totalRows[0].total_amount} 円）`, operator }
     );
-    return { ok: true, invoiceId, message: `${month} の請求書を確定しました（合計 ${preview.totalAmount.toLocaleString()} 円）。` };
+    return { ok: true, invoiceId, message: `請求書を発行しました（印刷可能・合計 ${Number(totalRows[0].total_amount).toLocaleString()} 円）。` };
   });
 }
 
@@ -372,20 +545,30 @@ export interface InvoiceRow {
   shipper_name: string;
   total_amount: number;
   note: string;
+  status: "draft" | "issued";
   finalized_by: string;
   finalized_at: string;
+  issued_by: string | null;
+  issued_at: string | null;
 }
 
 export interface InvoiceLineRow {
   id: number;
   line_no: number;
-  category: "storage" | "handling_in" | "handling_out";
+  category: "storage" | "handling_in" | "handling_out" | "manual";
   item_name: string;
   spec: string;
   period_no: number | null;
   quantity: number;
   unit_price: number;
-  amount: number;
+  amount: number; // 原本（計算値。manual は入力値）
+  adjusted_amount: number | null; // 表示調整（NULL=無調整）
+  adjust_reason: string | null;
+}
+
+/** 明細の有効金額（調整があれば調整値、なければ原本） */
+export function lineEffectiveAmount(l: InvoiceLineRow): number {
+  return l.adjusted_amount ?? l.amount;
 }
 
 export async function listInvoices(): Promise<InvoiceRow[]> {

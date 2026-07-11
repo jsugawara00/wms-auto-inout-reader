@@ -9,9 +9,15 @@ import { finalizeMonth, addSnapshotOverride, getSnapshot } from "../lib/closing"
 import {
   upsertTariff,
   calcMonthlyBilling,
-  finalizeInvoice,
+  createDraftInvoice,
+  recomputeDraft,
+  adjustInvoiceLine,
+  addManualLine,
+  deleteManualLine,
+  issueInvoice,
   getInvoice,
   listInvoices,
+  lineEffectiveAmount,
 } from "../lib/billing";
 
 let passed = 0;
@@ -111,22 +117,80 @@ console.log("\n— タリフ未設定の警告（北洋水産） —");
   }
 }
 
-console.log("\n— 請求書の確定（原本不変・二重確定拒否） —");
+console.log("\n— 締め（下書き作成）＋二重締め拒否 —");
+let invoiceId = 0;
 {
-  const r1 = await finalizeInvoice({ shipperId: 1, month: "2026-07", operator: "op01" });
-  check("確定成功", r1.ok === true, r1);
+  const r1 = await createDraftInvoice({ shipperId: 1, month: "2026-07", operator: "op01" });
+  check("締め成功（下書き）", r1.ok === true, r1);
   if (r1.ok) {
-    const inv = await getInvoice(r1.invoiceId);
+    invoiceId = r1.invoiceId;
+    const inv = await getInvoice(invoiceId);
+    check("status は draft", inv!.invoice.status === "draft", inv!.invoice.status);
     check("合計 21560円で保存", Number(inv!.invoice.total_amount) === 21560, inv!.invoice.total_amount);
-    const storageLines = inv!.lines.filter((l) => l.category === "storage");
-    check("保管料明細 3期分", storageLines.length === 3, storageLines.length);
+    check("保管料明細 3期分", inv!.lines.filter((l) => l.category === "storage").length === 3);
     check("出庫荷役明細あり", inv!.lines.some((l) => l.category === "handling_out"));
-    const logs = await db().rows(
-      "SELECT * FROM edit_logs WHERE target_type = 'invoice' AND action = 'finalize'");
-    check("確定履歴が残る", logs.length === 1);
   }
-  const r2 = await finalizeInvoice({ shipperId: 1, month: "2026-07", operator: "op01" });
-  check("二重確定は拒否", r2.ok === false, r2);
+  const r2 = await createDraftInvoice({ shipperId: 1, month: "2026-07", operator: "op01" });
+  check("二重締めは拒否", r2.ok === false, r2);
+}
+
+console.log("\n— 確認フォーム：行金額の調整（原本不変） —");
+{
+  const inv = await getInvoice(invoiceId);
+  const storage1 = inv!.lines.find((l) => l.category === "storage" && l.period_no === 1)!; // 9720円
+  const a = await adjustInvoiceLine({ lineId: storage1.id, adjustedAmount: 9000, reason: "端数調整（検証）", operator: "op01" });
+  check("行金額の調整成功", a.ok === true, a);
+  const inv2 = await getInvoice(invoiceId);
+  const line = inv2!.lines.find((l) => l.id === storage1.id)!;
+  check("原本 amount は不変（9720）", Number(line.amount) === 9720, line.amount);
+  check("表示値は調整後（9000）", lineEffectiveAmount(line) === 9000, lineEffectiveAmount(line));
+  check("合計は調整を反映（21560-720=20840）", Number(inv2!.invoice.total_amount) === 20840, inv2!.invoice.total_amount);
+}
+
+console.log("\n— 確認フォーム：例外請求行の追加・削除 —");
+{
+  const add = await addManualLine({ invoiceId, itemName: "特別対応費", spec: "", quantity: 1, unitPrice: 5000, operator: "op01" });
+  check("例外行の追加成功", add.ok === true, add);
+  const inv = await getInvoice(invoiceId);
+  const manual = inv!.lines.find((l) => l.category === "manual");
+  check("manual 行が1本", inv!.lines.filter((l) => l.category === "manual").length === 1);
+  check("合計に算入（20840+5000=25840）", Number(inv!.invoice.total_amount) === 25840, inv!.invoice.total_amount);
+
+  const del = await deleteManualLine({ lineId: manual!.id, operator: "op01" });
+  check("例外行の削除成功", del.ok === true, del);
+  const inv2 = await getInvoice(invoiceId);
+  check("合計が戻る（25840-5000=20840）", Number(inv2!.invoice.total_amount) === 20840, inv2!.invoice.total_amount);
+}
+
+console.log("\n— 再計算：計算行は作り直し・例外行は保持 —");
+{
+  await addManualLine({ invoiceId, itemName: "保険料", spec: "", quantity: 1, unitPrice: 3000, operator: "op01" });
+  const before = await getInvoice(invoiceId);
+  const adjustedBefore = before!.lines.find((l) => l.category === "storage" && l.period_no === 1)!;
+  check("再計算前：調整が残っている", adjustedBefore.adjusted_amount !== null);
+  const r = await recomputeDraft({ invoiceId, operator: "op01" });
+  check("再計算成功", r.ok === true, r);
+  const after = await getInvoice(invoiceId);
+  check("例外行（保険料）は保持", after!.lines.some((l) => l.category === "manual" && l.item_name === "保険料"));
+  const recomputed = after!.lines.find((l) => l.category === "storage" && l.period_no === 1)!;
+  check("計算行の調整はクリアされ原本に戻る（9720）", recomputed.adjusted_amount === null && Number(recomputed.amount) === 9720, recomputed);
+  check("合計は再計算値（21560+3000=24560）", Number(after!.invoice.total_amount) === 24560, after!.invoice.total_amount);
+}
+
+console.log("\n— 発行（issued・以後不変） —");
+{
+  const r = await issueInvoice({ invoiceId, operator: "op02" });
+  check("発行成功", r.ok === true, r);
+  const inv = await getInvoice(invoiceId);
+  check("status は issued", inv!.invoice.status === "issued", inv!.invoice.status);
+  check("発行者が記録される", inv!.invoice.issued_by === "op02", inv!.invoice.issued_by);
+
+  const a = await adjustInvoiceLine({ lineId: inv!.lines[0].id, adjustedAmount: 1, reason: "x", operator: "op01" });
+  check("発行済みは調整不可（不変）", a.ok === false, a);
+  const m = await addManualLine({ invoiceId, itemName: "後出し", spec: "", quantity: 1, unitPrice: 1, operator: "op01" });
+  check("発行済みは例外行追加不可", m.ok === false, m);
+  const r2 = await issueInvoice({ invoiceId, operator: "op02" });
+  check("二重発行は拒否", r2.ok === false, r2);
   const list = await listInvoices();
   check("請求書一覧に載る", list.length === 1 && list[0].shipper_name === "マルノウ食品株式会社");
 }
