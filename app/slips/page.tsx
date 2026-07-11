@@ -16,11 +16,16 @@ const SOURCE_LABEL = { fax: "FAX", mail: "メール" } as const;
 
 type Props = { searchParams: Promise<{ status?: string }> };
 
+function todayJst(): string {
+  return new Date(Date.now() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10);
+}
+
 export default async function SlipsPage({ searchParams }: Props) {
   const { status } = await searchParams;
   const valid: SlipStatus[] = ["unprocessed", "confirmed", "done", "hold"];
   const filter = valid.includes(status as SlipStatus) ? (status as SlipStatus) : undefined;
   const slips = await listSlips(filter);
+  const today = todayJst();
 
   return (
     <div className="space-y-4">
@@ -54,6 +59,7 @@ export default async function SlipsPage({ searchParams }: Props) {
                 <th className="py-2 pr-3">状態</th>
                 <th className="py-2 pr-3">荷主</th>
                 <th className="py-2 pr-3">伝票番号</th>
+                <th className="py-2 pr-3">入出庫日</th>
                 <th className="py-2 pr-3">明細</th>
                 <th className="py-2 pr-3">形式</th>
                 <th className="py-2 pr-3">読取確信度</th>
@@ -84,6 +90,21 @@ export default async function SlipsPage({ searchParams }: Props) {
                   </td>
                   <td className="py-2 pr-3">{s.shipper_name ?? "（未確定）"}</td>
                   <td className="py-2 pr-3 font-mono">{s.slip_number || "―"}</td>
+                  <td className="py-2 pr-3 font-mono">
+                    {s.movement_date ? (
+                      <span
+                        className={
+                          s.status !== "done" && s.movement_date !== today
+                            ? "font-bold text-red-600"
+                            : ""
+                        }
+                      >
+                        {s.movement_date}
+                      </span>
+                    ) : (
+                      "―"
+                    )}
+                  </td>
                   <td className="py-2 pr-3">{s.line_count}行</td>
                   <td className="py-2 pr-3">{SOURCE_LABEL[s.source_type]}</td>
                   <td className="py-2 pr-3">

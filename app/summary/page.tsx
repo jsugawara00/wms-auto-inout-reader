@@ -106,7 +106,8 @@ export default async function SummaryPage({ searchParams }: Props) {
         </form>
       </div>
       <p className="text-sm text-neutral-500">
-        {target} に確定された入出庫の一覧です。読取・確定内容の再確認にお使いください（最後の砦）。
+        入出庫日（書類上の出荷日・入荷日）が {target} の入出庫一覧です。確定が遅れた伝票も実際の入出庫日のほうに載ります。
+        読取・確定内容の再確認にお使いください（最後の砦）。
       </p>
 
       <section className="space-y-2">

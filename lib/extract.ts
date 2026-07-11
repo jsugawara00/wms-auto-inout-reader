@@ -26,7 +26,13 @@ export const ExtractionSchema = z.object({
   requested_at: z
     .string()
     .nullable()
-    .describe("依頼日時 'YYYY-MM-DD' または 'YYYY-MM-DD HH:mm'。無ければ null"),
+    .describe("依頼日時（書類の作成日・依頼日）'YYYY-MM-DD' または 'YYYY-MM-DD HH:mm'。無ければ null"),
+  movement_date: z
+    .string()
+    .nullable()
+    .describe(
+      "入出庫日 'YYYY-MM-DD'：出荷日・入荷日・納品日・配送日など、実際に商品が倉庫を出入りする日付。依頼日とは区別する。無ければ null"
+    ),
   confidence: z
     .enum(["high", "medium", "low"])
     .describe("読取全体の確信度。かすれ・手書き・不鮮明があれば low"),

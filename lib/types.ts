@@ -64,6 +64,8 @@ export interface Slip {
   status: SlipStatus;
   shipper_id: number | null;
   requested_at: string | null;
+  /** 入出庫日（書類上の出荷日/入荷日 'YYYY-MM-DD'）。サマリーの基準日 */
+  movement_date: string | null;
   received_at: string;
   source_file: string | null;
   confidence: Confidence | null;

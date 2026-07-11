@@ -97,6 +97,61 @@ export async function saveLineAction(formData: FormData): Promise<void> {
 }
 
 // ---------------------------------------------------------------
+// 入出庫日の修正（FB⑥：書類上の出荷日/入荷日。理由必須・履歴記録）
+// ---------------------------------------------------------------
+export async function saveMovementDateAction(formData: FormData): Promise<void> {
+  const slipId = Number(formData.get("slipId"));
+  const expectedVersion = Number(formData.get("slipVersion"));
+  const operator = await currentOperator();
+  const movementDate = String(formData.get("movementDate") ?? "");
+  const reason = String(formData.get("reason") ?? "").trim();
+
+  const redirectTo = (msg: string, isError: boolean) =>
+    redirect(`/slips/${slipId}?${isError ? "error" : "saved"}=${encodeURIComponent(msg)}`);
+
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(movementDate)) {
+    redirectTo("入出庫日を選択してください。", true);
+  }
+  if (!reason) redirectTo("修正理由は必須です（例：書類の出荷日を確認）。", true);
+  await rememberOperator(operator);
+
+  const error = await withTransaction(async (conn): Promise<string | null> => {
+    const slips = await conn.rows<Slip>(
+      "SELECT * FROM slips WHERE id = :slipId FOR UPDATE",
+      { slipId }
+    );
+    const slip = slips[0];
+    if (!slip) return "伝票が見つかりません。";
+    if (slip.status === "done") return "確定済みの伝票は修正できません。";
+    if (slip.version !== expectedVersion) {
+      return "他の担当者がこの伝票を更新しました。最新表示を確認してから修正してください。";
+    }
+    if (slip.movement_date === movementDate) return "入出庫日に変更がありません。";
+
+    await conn.exec(
+      "UPDATE slips SET movement_date = :movementDate, version = version + 1 WHERE id = :slipId",
+      { movementDate, slipId }
+    );
+    await conn.exec(
+      `INSERT INTO edit_logs (target_type, target_id, action, field, old_value, new_value, reason, operator)
+       VALUES ('slip', :slipId, 'update', 'movement_date', :oldValue, :newValue, :reason, :operator)`,
+      {
+        slipId,
+        oldValue: slip.movement_date ?? "",
+        newValue: movementDate,
+        reason,
+        operator,
+      }
+    );
+    return null;
+  });
+
+  revalidatePath(`/slips/${slipId}`);
+  if (error) redirectTo(error, true);
+  redirectTo("入出庫日を修正しました（履歴に記録済み）。", false);
+}
+
+// ---------------------------------------------------------------
 // 荷主の確定（既存へ紐付け／新規登録：企画書 6.5）
 // マスタ登録権限（admin）が必要。operator は「登録を依頼」で管理者へ通知する。
 // ---------------------------------------------------------------
@@ -287,9 +342,11 @@ export async function releaseSlipAction(formData: FormData): Promise<void> {
 // 確定（入力担当の関門：企画書 6.2）
 // ---------------------------------------------------------------
 export interface ConfirmFormState {
-  status: "idle" | "error" | "negative";
+  status: "idle" | "error" | "negative" | "date_mismatch";
   message?: string;
   warnings?: NegativeWarning[];
+  /** 入出庫日不一致を担当が承認済み（再送信時に維持する） */
+  acknowledgedDate?: boolean;
 }
 
 export async function confirmSlipFormAction(
@@ -301,22 +358,33 @@ export async function confirmSlipFormAction(
   const operator = await currentOperator();
   const acknowledged = formData.get("acknowledged") === "on";
   const allowNegative = formData.get("allowNegative") === "true";
+  const allowDateMismatch = formData.get("allowDateMismatch") === "true";
 
   if (!operator) return { status: "error", message: "担当者コードが取得できません。ログインを確認してください。" };
   if (!acknowledged) {
     return {
       status: "error",
       message: "確定文言への同意チェックが必要です（確定後の在庫責任は確定者に帰属します）。",
+      acknowledgedDate: allowDateMismatch,
     };
   }
   await rememberOperator(operator);
 
-  const result = await confirmSlip({ slipId, operator, expectedVersion, allowNegative });
+  const result = await confirmSlip({
+    slipId,
+    operator,
+    expectedVersion,
+    allowNegative,
+    allowDateMismatch,
+  });
   if (!result.ok) {
-    if (result.kind === "negative") {
-      return { status: "negative", warnings: result.warnings };
+    if (result.kind === "date_mismatch") {
+      return { status: "date_mismatch", message: result.message };
     }
-    return { status: "error", message: result.message };
+    if (result.kind === "negative") {
+      return { status: "negative", warnings: result.warnings, acknowledgedDate: allowDateMismatch };
+    }
+    return { status: "error", message: result.message, acknowledgedDate: allowDateMismatch };
   }
 
   revalidatePath("/slips");

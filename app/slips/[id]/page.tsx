@@ -14,8 +14,13 @@ import {
   resolveLineAction,
   assignShipperAction,
   requestShipperRegistrationAction,
+  saveMovementDateAction,
 } from "../actions";
 import { ConfirmBox } from "./confirm-box";
+
+function todayJst(): string {
+  return new Date(Date.now() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10);
+}
 
 export const dynamic = "force-dynamic";
 
@@ -85,6 +90,23 @@ export default async function SlipDetailPage({ params, searchParams }: Props) {
         <div>取込日時：{slip.received_at}</div>
         <div>依頼日時：{slip.requested_at ?? "―"}</div>
         <div>
+          入出庫日：
+          {slip.movement_date ? (
+            <span
+              className={
+                slip.movement_date !== todayJst()
+                  ? "font-bold text-red-600"
+                  : "font-bold"
+              }
+            >
+              {slip.movement_date}
+              {slip.movement_date !== todayJst() && "（本日ではありません）"}
+            </span>
+          ) : (
+            "―"
+          )}
+        </div>
+        <div>
           読取確信度：
           {slip.confidence === "low" ? (
             <span className="text-red-600">低（要確認）</span>
@@ -102,6 +124,44 @@ export default async function SlipDetailPage({ params, searchParams }: Props) {
           </div>
         )}
       </section>
+
+      {editable && (
+        <form
+          action={saveMovementDateAction}
+          className="flex flex-wrap items-end gap-2 rounded border border-neutral-200 p-3 text-sm dark:border-neutral-800"
+        >
+          <input type="hidden" name="slipId" value={slip.id} />
+          <input type="hidden" name="slipVersion" value={slip.version} />
+          <span className="text-xs text-neutral-500">
+            入出庫日（書類上の出荷日・入荷日）の修正：記録・サマリーはこの日付が基準になります。
+          </span>
+          <label>
+            入出庫日
+            <input
+              type="date"
+              name="movementDate"
+              defaultValue={slip.movement_date ?? ""}
+              required
+              className="ml-1 rounded border px-2 py-1 dark:bg-neutral-900"
+            />
+          </label>
+          <label className="flex-1">
+            修正理由（必須）
+            <input
+              name="reason"
+              required
+              placeholder="例：書類の出荷日欄を確認"
+              className="ml-1 w-2/3 rounded border px-2 py-1 dark:bg-neutral-900"
+            />
+          </label>
+          <button
+            type="submit"
+            className="rounded border px-3 py-1 hover:bg-neutral-100 dark:hover:bg-neutral-800"
+          >
+            入出庫日を修正
+          </button>
+        </form>
+      )}
 
       {editable && !shipper && isAdmin && (
         <section className="space-y-2 rounded border border-red-300 bg-red-50 p-4 text-sm dark:border-red-800 dark:bg-red-950">

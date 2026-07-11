@@ -47,6 +47,12 @@ function parseDateTime(s: string | null): string | null {
   return /^\d{4}-\d{2}-\d{2}( \d{2}:\d{2}(:\d{2})?)?$/.test(s) ? s : null;
 }
 
+function parseDateOnly(s: string | null): string | null {
+  if (!s) return null;
+  const m = s.match(/^(\d{4}-\d{2}-\d{2})/);
+  return m ? m[1] : null;
+}
+
 async function logIntake(entry: {
   sourceType: "fax" | "mail";
   sourceRef: string;
@@ -86,12 +92,17 @@ async function createSlip(
       .join(" / ");
     const note = [ex.note, unitNotes].filter(Boolean).join(" / ") || null;
 
+    // 入出庫日：書類上の出荷日/入荷日 → 無ければ依頼日 → それも無ければ取込日（本日）
+    const movementDate =
+      parseDateOnly(ex.movement_date) ?? parseDateOnly(ex.requested_at);
+
     const slipIns = await conn.rows<{ id: number }>(
       `INSERT INTO slips (slip_type, source_type, slip_number, fingerprint, status,
-                          shipper_id, requested_at, received_at, source_file,
+                          shipper_id, requested_at, movement_date, received_at, source_file,
                           extracted_json, confidence, note)
        VALUES (:slipType, :sourceType, :slipNumber, :fingerprint, 'unprocessed',
-               :shipperId, :requestedAt, jst_now(), :sourceFile, :extractedJson, :confidence, :note)
+               :shipperId, :requestedAt, COALESCE(:movementDate::date, jst_now()::date),
+               jst_now(), :sourceFile, :extractedJson, :confidence, :note)
        RETURNING id`,
       {
         slipType: ex.slip_type,
@@ -100,6 +111,7 @@ async function createSlip(
         fingerprint: buildFingerprint(ex),
         shipperId,
         requestedAt: parseDateTime(ex.requested_at),
+        movementDate,
         sourceFile: sourceFile,
         extractedJson: JSON.stringify(ex), // 監査用に生結果を保持
         confidence: ex.confidence,

@@ -53,16 +53,16 @@ INSERT INTO stock (warehouse_id, item_id, production_date, lot_no, order_no, qua
 
 INSERT INTO slips
   (id, slip_type, source_type, slip_number, fingerprint, status, shipper_id,
-   requested_at, received_at, confidence, note) VALUES
+   requested_at, movement_date, received_at, confidence, note) VALUES
   (1, 'outbound', 'fax', 'MN-20260709-01', encode(sha256('seed-slip-1'::bytea), 'hex'),
-   'unprocessed', 1, '2026-07-09 09:15:00', '2026-07-09 17:00:00', 'high', NULL),
+   'unprocessed', 1, '2026-07-09 09:15:00', '2026-07-09', '2026-07-09 17:00:00', 'high', NULL),
   (2, 'outbound', 'fax', 'HK-20260709-11', encode(sha256('seed-slip-2'::bytea), 'hex'),
-   'unprocessed', 2, '2026-07-09 10:40:00', '2026-07-09 17:00:00', 'high', NULL),
+   'unprocessed', 2, '2026-07-09 10:40:00', '2026-07-09', '2026-07-09 17:00:00', 'high', NULL),
   (3, 'inbound', 'mail', 'TS-20260710-03', encode(sha256('seed-slip-3'::bytea), 'hex'),
-   'unprocessed', 3, '2026-07-10 08:05:00', '2026-07-10 08:30:00', 'medium',
+   'unprocessed', 3, '2026-07-10 08:05:00', '2026-07-10', '2026-07-10 08:30:00', 'medium',
    'メール本文の数量表記が「1PL」。1PL=40ケース換算か要確認（荷主マスタの特殊例外参照）'),
   (4, 'outbound', 'fax', 'HK-20260710-02', encode(sha256('seed-slip-4'::bytea), 'hex'),
-   'unprocessed', 2, '2026-07-10 09:00:00', '2026-07-10 09:20:00', 'high', NULL);
+   'unprocessed', 2, '2026-07-10 09:00:00', '2026-07-10', '2026-07-10 09:20:00', 'high', NULL);
 
 INSERT INTO slip_lines
   (slip_id, line_no, item_name_raw, spec_raw, item_id, warehouse_id,

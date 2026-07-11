@@ -18,7 +18,8 @@ export interface NegativeWarning {
 export type ConfirmResult =
   | { ok: true }
   | { ok: false; kind: "conflict" | "invalid"; message: string }
-  | { ok: false; kind: "negative"; warnings: NegativeWarning[] };
+  | { ok: false; kind: "negative"; warnings: NegativeWarning[] }
+  | { ok: false; kind: "date_mismatch"; message: string };
 
 interface LineForConfirm extends SlipLine {
   item_name: string | null;
@@ -111,8 +112,10 @@ export async function confirmSlip(input: {
   operator: string;
   expectedVersion: number;
   allowNegative: boolean;
+  /** 入出庫日が本日でない伝票の確定を担当が明示承認した場合 true（FB⑥） */
+  allowDateMismatch?: boolean;
 }): Promise<ConfirmResult> {
-  const { slipId, operator, expectedVersion, allowNegative } = input;
+  const { slipId, operator, expectedVersion, allowNegative, allowDateMismatch = false } = input;
   return withTransaction(async (conn): Promise<ConfirmResult> => {
     const slips = await conn.rows<Slip>(
       "SELECT * FROM slips WHERE id = :slipId FOR UPDATE",
@@ -136,6 +139,25 @@ export async function confirmSlip(input: {
     }
     if (!slip.shipper_id) {
       return { ok: false, kind: "invalid", message: "荷主が未確定です。先に荷主を紐付けてください。" };
+    }
+
+    // 入出庫日の関門（FB⑥）：本日でない伝票は担当の明示承認でのみ確定する。
+    // 記録・サマリーは入出庫日基準（読取が遅れても実際の入出庫日で残る）
+    if (!allowDateMismatch && slip.movement_date) {
+      const todayRows = await conn.rows<{ today: string }>(
+        "SELECT jst_now()::date::text AS today"
+      );
+      const today = todayRows[0].today;
+      if (slip.movement_date !== today) {
+        const isPast = slip.movement_date < today;
+        return {
+          ok: false,
+          kind: "date_mismatch",
+          message: isPast
+            ? `この伝票の入出庫日は ${slip.movement_date}（本日より前）です。確定の操作は本日ですが、記録・サマリーは ${slip.movement_date} の入出庫として処理します。よろしいですか？`
+            : `この伝票の入出庫日は ${slip.movement_date}（先日付）です。このまま確定すると在庫は本日時点で反映されます（サマリーには ${slip.movement_date} の入出庫として載ります）。当日に確定し直すこともできます。よろしいですか？`,
+        };
+      }
     }
 
     const rule = await loadRuleByShipperId(conn, slip.shipper_id);
@@ -333,7 +355,7 @@ export async function confirmSlip(input: {
       targetType: "slip",
       targetId: slipId,
       action: "confirm",
-      reason: "確認フォームで内容を確認のうえ確定（在庫責任は確定者に帰属）",
+      reason: `確認フォームで内容を確認のうえ確定（入出庫日 ${slip.movement_date ?? "―"}・在庫責任は確定者に帰属）`,
       operator,
     });
     return { ok: true };

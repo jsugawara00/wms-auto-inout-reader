@@ -125,6 +125,7 @@ CREATE TABLE slips (
                  CHECK (status IN ('unprocessed','confirmed','done','hold')),
   shipper_id     INTEGER      NULL REFERENCES shippers(id), -- 照合後に紐付け（未確定はNULL）
   requested_at   TIMESTAMP    NULL,                         -- 依頼日時（伝票上の日付）
+  movement_date  DATE         NULL,                         -- 入出庫日（書類上の出荷日/入荷日。サマリーの基準日）
   received_at    TIMESTAMP    NOT NULL,                     -- 取込日時
   source_file    VARCHAR(500) NULL,                         -- 元PDF（Vercel Blob URL 等）
   extracted_json JSONB        NULL,                         -- Claude読取の生結果（監査用に保持）

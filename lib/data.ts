@@ -134,6 +134,7 @@ export interface SummaryRow {
   slip_number: string;
   confirmed_by: string;
   confirmed_at: string;
+  movement_date: string | null;
   shipper_name: string | null;
   line_no: number;
   item_name: string | null;
@@ -146,10 +147,15 @@ export interface SummaryRow {
   quantity: number;
 }
 
-/** 入出庫サマリー：指定日に確定された伝票の明細一覧（企画書 6.6 最後の砦） */
+/**
+ * 入出庫サマリー：指定日の入出庫の明細一覧（企画書 6.6 最後の砦）。
+ * 基準日は入出庫日（書類上の出荷日/入荷日）。読取・確定が遅れても実際の日に載る（FB⑥）。
+ * 入出庫日が未設定の旧伝票は確定日で拾う。
+ */
 export async function getDailySummary(date: string): Promise<SummaryRow[]> {
   return db().rows<SummaryRow>(
     `SELECT s.id AS slip_id, s.slip_type, s.slip_number, s.confirmed_by, s.confirmed_at,
+            s.movement_date,
             sh.name AS shipper_name,
             l.line_no, i.name AS item_name, l.item_name_raw, i.spec,
             w.code AS warehouse_code, w.name AS warehouse_name,
@@ -159,7 +165,7 @@ export async function getDailySummary(date: string): Promise<SummaryRow[]> {
      LEFT JOIN shippers sh ON sh.id = s.shipper_id
      LEFT JOIN items i ON i.id = l.item_id
      LEFT JOIN warehouses w ON w.id = l.warehouse_id
-     WHERE s.status = 'done' AND s.confirmed_at::date = :date
+     WHERE s.status = 'done' AND COALESCE(s.movement_date, s.confirmed_at::date) = :date
      ORDER BY s.slip_type, s.confirmed_at, s.id, l.line_no`,
     { date }
   );
