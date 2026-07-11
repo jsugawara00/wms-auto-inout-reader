@@ -23,10 +23,16 @@ export function clerkEnabled(): boolean {
 async function clerkIdentity(): Promise<{ operator: string; role: Role } | null> {
   if (!clerkEnabled()) return null;
   try {
-    const { auth } = await import("@clerk/nextjs/server");
+    const { auth, currentUser } = await import("@clerk/nextjs/server");
     const { sessionClaims, userId } = await auth();
     if (!userId) return null;
-    const meta = (sessionClaims?.metadata ?? {}) as { operatorCode?: string; role?: string };
+    // セッショントークンに metadata が載っていればそれを使い、
+    // 無ければユーザー情報（publicMetadata）を直接読む（Clerk側の追加設定を不要にする）
+    let meta = (sessionClaims?.metadata ?? {}) as { operatorCode?: string; role?: string };
+    if (!meta.operatorCode && !meta.role) {
+      const user = await currentUser();
+      meta = (user?.publicMetadata ?? {}) as { operatorCode?: string; role?: string };
+    }
     return {
       operator: meta.operatorCode?.trim() || `clerk:${userId.slice(-6)}`,
       role: meta.role === "operator" ? "operator" : "admin",
