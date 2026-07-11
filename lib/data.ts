@@ -165,8 +165,9 @@ export async function getDailySummary(date: string): Promise<SummaryRow[]> {
   );
 }
 
-/** 在庫一覧：荷主 → 品目 → 製造日/ロットの順で返す（企画書 6.6 在庫報告の並び） */
-export async function listStock(): Promise<StockListRow[]> {
+/** 在庫一覧：荷主 → 品目 → 製造日/ロットの順で返す（企画書 6.6 在庫報告の並び）。倉庫で絞り込み可 */
+export async function listStock(warehouseId?: number): Promise<StockListRow[]> {
+  const where = warehouseId ? "WHERE st.warehouse_id = :warehouseId" : "";
   return db().rows<StockListRow>(
     `SELECT st.id AS stock_id, st.version, st.quantity, st.production_date, st.lot_no, st.order_no,
             i.id AS item_id, i.name AS item_name, i.spec,
@@ -176,6 +177,8 @@ export async function listStock(): Promise<StockListRow[]> {
      JOIN items i ON i.id = st.item_id
      JOIN shippers sh ON sh.id = i.shipper_id
      JOIN warehouses w ON w.id = st.warehouse_id
-     ORDER BY sh.name, i.name, i.spec, st.production_date IS NULL, st.production_date, st.lot_no`
+     ${where}
+     ORDER BY sh.name, i.name, i.spec, st.production_date IS NULL, st.production_date, st.lot_no`,
+    warehouseId ? { warehouseId } : {}
   );
 }

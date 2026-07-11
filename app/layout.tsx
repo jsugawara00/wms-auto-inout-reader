@@ -51,6 +51,9 @@ function Shell({ children }: { children: React.ReactNode }) {
             <Link href="/masters/items" className="hover:underline">
               商品マスタ
             </Link>
+            <Link href="/masters/warehouses" className="hover:underline">
+              倉庫マスタ
+            </Link>
             <AuthControls />
           </nav>
         </header>

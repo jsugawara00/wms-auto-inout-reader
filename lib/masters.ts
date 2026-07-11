@@ -1,6 +1,6 @@
 import { db, withTransaction, type Queryable } from "./db";
 import { normalizeItemName, normalizeShipperName } from "./normalize";
-import type { AllocationRule, Item, Shipper } from "./types";
+import type { AllocationRule, Item, Shipper, Warehouse } from "./types";
 
 // マスタ管理（リメイクの新規機能）：商品マスタ・荷主マスタの CRUD ＋統合マージ。
 // 「判断基準の外出し」の思想はそのまま：荷主の引き当てルールはコードでなくマスタ列で持つ。
@@ -327,9 +327,96 @@ export async function updateShipper(
   });
 }
 
+// ============================================================
+// 倉庫マスタ（FB③：新しい倉庫の追加・名称変更）
+// ============================================================
+
+export interface WarehouseListRow extends Warehouse {
+  stock_count: number;
+}
+
+export async function listWarehouseMasters(): Promise<WarehouseListRow[]> {
+  return db().rows<WarehouseListRow>(
+    `SELECT w.*, (SELECT COUNT(*) FROM stock st WHERE st.warehouse_id = w.id) AS stock_count
+     FROM warehouses w ORDER BY w.code`
+  );
+}
+
+export async function createWarehouse(input: {
+  code: string;
+  name: string;
+  warehouseType: Warehouse["warehouse_type"];
+  operator: string;
+}): Promise<MasterResult> {
+  const code = input.code.trim();
+  const name = input.name.trim();
+  if (!code) return { ok: false, message: "倉庫コードを入力してください。" };
+  if (!name) return { ok: false, message: "倉庫名を入力してください。" };
+
+  return withTransaction(async (conn): Promise<MasterResult> => {
+    const dup = await conn.rows<{ id: number }>(
+      "SELECT id FROM warehouses WHERE code = :code",
+      { code }
+    );
+    if (dup.length > 0) {
+      return { ok: false, message: `倉庫コード「${code}」は既に使われています。` };
+    }
+    const ins = await conn.rows<{ id: number }>(
+      `INSERT INTO warehouses (code, name, warehouse_type)
+       VALUES (:code, :name, :warehouseType) RETURNING id`,
+      { code, name, warehouseType: input.warehouseType }
+    );
+    await logMaster(conn, "warehouse", ins[0].id, "create", `倉庫マスタ登録：${code} ${name}`, input.operator);
+    return { ok: true, message: `倉庫「${code} ${name}」を登録しました。` };
+  });
+}
+
+export async function updateWarehouse(input: {
+  warehouseId: number;
+  code: string;
+  name: string;
+  warehouseType: Warehouse["warehouse_type"];
+  operator: string;
+}): Promise<MasterResult> {
+  const code = input.code.trim();
+  const name = input.name.trim();
+  if (!code || !name) return { ok: false, message: "倉庫コードと倉庫名を入力してください。" };
+
+  return withTransaction(async (conn): Promise<MasterResult> => {
+    const rows = await conn.rows<Warehouse>(
+      "SELECT * FROM warehouses WHERE id = :id FOR UPDATE",
+      { id: input.warehouseId }
+    );
+    const cur = rows[0];
+    if (!cur) return { ok: false, message: "倉庫が見つかりません。" };
+
+    const dup = await conn.rows<{ id: number }>(
+      "SELECT id FROM warehouses WHERE code = :code AND id <> :id",
+      { code, id: input.warehouseId }
+    );
+    if (dup.length > 0) {
+      return { ok: false, message: `倉庫コード「${code}」は別の倉庫で使われています。` };
+    }
+
+    const changes: string[] = [];
+    if (cur.code !== code) changes.push(`コード ${cur.code}→${code}`);
+    if (cur.name !== name) changes.push(`名称 ${cur.name}→${name}`);
+    if (cur.warehouse_type !== input.warehouseType) changes.push(`種類 ${cur.warehouse_type}→${input.warehouseType}`);
+    if (changes.length === 0) return { ok: false, message: "変更点がありません。" };
+
+    await conn.exec(
+      `UPDATE warehouses SET code = :code, name = :name, warehouse_type = :warehouseType
+       WHERE id = :id`,
+      { code, name, warehouseType: input.warehouseType, id: input.warehouseId }
+    );
+    await logMaster(conn, "warehouse", input.warehouseId, "update", `倉庫マスタ修正：${changes.join(" / ")}`, input.operator);
+    return { ok: true, message: `倉庫「${code} ${name}」を更新しました。` };
+  });
+}
+
 async function logMaster(
   conn: Queryable,
-  targetType: "item" | "shipper",
+  targetType: "item" | "shipper" | "warehouse",
   targetId: number,
   action: "create" | "update",
   reason: string,

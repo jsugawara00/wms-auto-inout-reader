@@ -1,14 +1,17 @@
 import { Fragment } from "react";
-import { listStock, type StockListRow } from "@/lib/data";
+import Link from "next/link";
+import { listStock, listWarehouses, type StockListRow } from "@/lib/data";
 import { adjustStockAction } from "./actions";
 
 export const dynamic = "force-dynamic";
 
-type Props = { searchParams: Promise<{ saved?: string; error?: string }> };
+type Props = { searchParams: Promise<{ saved?: string; error?: string; warehouse?: string }> };
 
 export default async function StockPage({ searchParams }: Props) {
-  const { saved, error } = await searchParams;
-  const rows = await listStock();
+  const { saved, error, warehouse } = await searchParams;
+  const warehouses = await listWarehouses();
+  const filterId = warehouses.find((w) => String(w.id) === warehouse)?.id;
+  const rows = await listStock(filterId);
 
   // 荷主でグループ化（企画書 6.6 在庫報告の並び）
   const byShipper = new Map<string, StockListRow[]>();
@@ -21,6 +24,23 @@ export default async function StockPage({ searchParams }: Props) {
   return (
     <div className="space-y-6">
       <h1 className="text-xl font-bold">在庫一覧</h1>
+      <div className="flex flex-wrap gap-2 text-sm">
+        <Link
+          href="/stock"
+          className={`rounded border px-3 py-1 ${!filterId ? "bg-neutral-200 dark:bg-neutral-700" : ""}`}
+        >
+          すべての倉庫
+        </Link>
+        {warehouses.map((w) => (
+          <Link
+            key={w.id}
+            href={`/stock?warehouse=${w.id}`}
+            className={`rounded border px-3 py-1 ${filterId === w.id ? "bg-neutral-200 dark:bg-neutral-700" : ""}`}
+          >
+            {w.code} {w.name}
+          </Link>
+        ))}
+      </div>
       {saved && (
         <p className="rounded bg-green-50 p-2 text-sm text-green-700 dark:bg-green-950 dark:text-green-300">
           {saved}
