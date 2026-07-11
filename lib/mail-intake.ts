@@ -66,6 +66,17 @@ export async function fetchMailIntake(): Promise<MailIntakeResult | null> {
         const subject = parsed.subject ?? "(件名なし)";
         const from = parsed.from?.text ?? "(差出人不明)";
 
+        // カバーメール情報（件名・差出人・送信日時・本文）。
+        // 送信日時は「翌日集荷」等の相対日付を絶対日付へ換算する基準になる（FB⑦）
+        const bodyText = (parsed.text ?? "").trim();
+        const sentAt = parsed.date
+          ? new Date(parsed.date.getTime() + 9 * 60 * 60 * 1000)
+              .toISOString()
+              .slice(0, 16)
+              .replace("T", " ")
+          : null;
+        const mailContext = `件名: ${subject}\n差出人: ${from}${sentAt ? `\n送信日時: ${sentAt}（JST）` : ""}\n\n${bodyText}`;
+
         const pdfs = (parsed.attachments ?? []).filter(
           (a) =>
             a.contentType === "application/pdf" ||
@@ -73,24 +84,19 @@ export async function fetchMailIntake(): Promise<MailIntakeResult | null> {
         );
 
         if (pdfs.length > 0) {
-          // PDF添付 → FAXアップロードと同じ経路で取込（企画書 6.1「同じ型へ集約」）
+          // PDF添付 → FAXアップロードと同じ経路で取込（企画書 6.1「同じ型へ集約」）。
+          // カバーメールを補完情報として渡す：本文の「◯◯です」「明日の出庫」が
+          // 荷主名・入出庫日の補完に効く（PDFが正・補完は note 明記：FB⑧）
           for (let i = 0; i < pdfs.length; i++) {
             const base = sanitizeFilename(pdfs[i].filename ?? `attachment-${i + 1}.pdf`);
-            results.push(await intakePdf(pdfs[i].content, `mail-${uid}-${base}`, "mail"));
+            results.push(
+              await intakePdf(pdfs[i].content, `mail-${uid}-${base}`, "mail", mailContext)
+            );
           }
         } else {
           // 本文のみ → 自然文から抽出（まず動かし段階的に精度向上：企画書 STEP2）
-          // 送信日時も渡す：「翌日集荷」等の相対日付を絶対日付へ換算する基準になる（FB⑦）
-          const bodyText = (parsed.text ?? "").trim();
-          const sentAt = parsed.date
-            ? new Date(parsed.date.getTime() + 9 * 60 * 60 * 1000)
-                .toISOString()
-                .slice(0, 16)
-                .replace("T", " ")
-            : null;
           const sourceRef = `mail: ${subject}（${from}）`;
-          const mailText = `件名: ${subject}\n差出人: ${from}${sentAt ? `\n送信日時: ${sentAt}（JST）` : ""}\n\n${bodyText}`;
-          const ex = await extractSlipFromText(mailText);
+          const ex = await extractSlipFromText(mailContext);
           results.push(await intakeExtraction(ex, sourceRef, "mail"));
         }
 

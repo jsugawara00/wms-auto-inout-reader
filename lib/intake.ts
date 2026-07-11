@@ -241,17 +241,19 @@ export async function intakeExtraction(
 /**
  * PDF 1件を取り込む（画面アップロード・メール添付で共用）。
  * Blob へ原本を保管 → Claude読取 → intakeExtraction。
+ * メール添付の場合はカバーメール情報（mailContext）を補完用に読取へ渡す（FB⑧）。
  * エラーも intake_logs に記録する（黙って捨てない）。
  */
 export async function intakePdf(
   pdf: Buffer,
   filename: string,
-  sourceType: "fax" | "mail"
+  sourceType: "fax" | "mail",
+  mailContext?: string
 ): Promise<IntakeResult> {
   const blobUrl = await storePdf(filename, pdf);
   const sourceRef = blobUrl ?? filename;
   try {
-    const ex = await extractSlipFromPdf(pdf);
+    const ex = await extractSlipFromPdf(pdf, mailContext);
     return await intakeExtraction(ex, sourceRef, sourceType);
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
