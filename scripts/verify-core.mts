@@ -102,8 +102,8 @@ const ex1: Extraction = {
   confidence: "high",
   note: null,
   lines: [
-    { item_name: "冷凍コロッケ", spec: "１ｋｇ", production_date: "2026-07-01", lot_no: "", order_no: "", quantity: 100, unit_note: "" },
-    { item_name: "冷凍メンチカツ", spec: "1kg", production_date: "2026-07-01", lot_no: "", order_no: "", quantity: 50, unit_note: "" },
+    { item_name: "冷凍コロッケ", spec: "１ｋｇ", production_date: "2026-07-01", lot_no: "", item_code: "", order_no: "", quantity: 100, unit_note: "" },
+    { item_name: "冷凍メンチカツ", spec: "1kg", production_date: "2026-07-01", lot_no: "", item_code: "", order_no: "", quantity: 50, unit_note: "" },
   ],
 };
 let ex1SlipId = 0;
@@ -156,7 +156,7 @@ const ex2: Extraction = {
   confidence: "medium",
   note: null,
   lines: [
-    { item_name: "冷凍サバフィレ", spec: "2kg", production_date: "2026-06-25", lot_no: "YS-2606", order_no: "", quantity: 30, unit_note: "" },
+    { item_name: "冷凍サバフィレ", spec: "2kg", production_date: "2026-06-25", lot_no: "YS-2606", item_code: "", order_no: "", quantity: 30, unit_note: "" },
   ],
 };
 let ex2SlipId = 0;
@@ -192,6 +192,37 @@ let ex2SlipId = 0;
   });
   check("取込→解消→確定の一本道が通る", c.ok === true, c);
   check("在庫が生まれる", (await stockQty("lot_no = :l", { l: "YS-2606" })) === 30);
+}
+
+console.log("\n— 商品コード照合（FB⑤：コード探しゼロ） —");
+{
+  // コード一致＋品名一致 → 自動紐付け（品名は表記ゆれでもOK）
+  const exCode: Extraction = {
+    ...ex1,
+    slip_number: "MN-20260711-07",
+    lines: [
+      { item_name: "冷凍ｺﾛｯｹ", spec: "", production_date: "2026-07-05", lot_no: "", item_code: "MN-CRQ-1000", order_no: "", quantity: 10, unit_note: "" },
+    ],
+  };
+  const r1 = await intakeExtraction(exCode, "verify-code1.pdf", "fax");
+  const d1 = await getSlipDetail(r1.slipId!);
+  check("コード一致＋品名一致で自動紐付け", d1?.lines[0].item_id === 1 && d1?.lines[0].line_status === "ok", d1?.lines[0]);
+
+  // コード一致だが品名不一致 → 保留（コード誤読の可能性を担当へ）
+  const exCode2: Extraction = {
+    ...ex1,
+    slip_number: "MN-20260711-08",
+    lines: [
+      { item_name: "冷凍エビフライ", spec: "1kg", production_date: "2026-07-05", lot_no: "", item_code: "MN-CRQ-1000", order_no: "", quantity: 10, unit_note: "" },
+    ],
+  };
+  const r2 = await intakeExtraction(exCode2, "verify-code2.pdf", "fax");
+  const d2 = await getSlipDetail(r2.slipId!);
+  check(
+    "コード一致・品名不一致は保留（候補提示）",
+    d2?.lines[0].line_status === "hold" && (d2?.lines[0].hold_reason ?? "").includes("商品コード"),
+    d2?.lines[0]
+  );
 }
 
 console.log("\n— 楽観的ロック（古いversionでの確定は競合） —");

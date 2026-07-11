@@ -135,6 +135,7 @@ export async function assignShipper(input: {
         itemNameRaw: raw.item_name_raw,
         specRaw: raw.spec_raw,
         lotNo: raw.lot_no,
+        itemCodeRaw: raw.item_code_raw,
       });
       await conn.exec(
         `UPDATE slip_lines SET item_id = :itemId, line_status = :lineStatus, hold_reason = :holdReason

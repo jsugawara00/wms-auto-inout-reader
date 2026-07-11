@@ -47,7 +47,14 @@ export const ExtractionSchema = z.object({
         .nullable()
         .describe("製造日 'YYYY-MM-DD'。記載が無ければ null"),
       lot_no: z.string().describe("ロット番号。無ければ空文字"),
-      order_no: z.string().describe("特定番号（オーダー番号）。無ければ空文字"),
+      item_code: z
+        .string()
+        .describe("商品コード・品番（商品コード欄の値。例:MN-CRQ-1000）。無ければ空文字"),
+      order_no: z
+        .string()
+        .describe(
+          "特定番号（オーダー番号・注文番号など案件を特定する管理番号）。商品コード・品番は含めない（item_code へ）。無ければ空文字"
+        ),
       quantity: z.number().describe("数量（数値）"),
       unit_note: z
         .string()

@@ -85,6 +85,8 @@ export interface SlipLine {
   line_no: number;
   item_name_raw: string;
   spec_raw: string;
+  /** 読取そのままの商品コード（照合ヒント・監査用） */
+  item_code_raw: string;
   item_id: number | null;
   warehouse_id: number | null;
   production_date: string | null;

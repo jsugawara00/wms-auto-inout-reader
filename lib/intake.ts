@@ -118,6 +118,7 @@ async function createSlip(
             itemNameRaw: line.item_name,
             specRaw: line.spec,
             lotNo: line.lot_no,
+            itemCodeRaw: line.item_code,
           })
         : {
             itemId: null,
@@ -128,16 +129,17 @@ async function createSlip(
       const { itemId, lineStatus, holdReason } = match;
 
       await conn.exec(
-        `INSERT INTO slip_lines (slip_id, line_no, item_name_raw, spec_raw, item_id,
+        `INSERT INTO slip_lines (slip_id, line_no, item_name_raw, spec_raw, item_code_raw, item_id,
                                  warehouse_id, production_date, lot_no, order_no,
                                  quantity, line_status, hold_reason)
-         VALUES (:slipId, :lineNo, :itemNameRaw, :specRaw, :itemId,
+         VALUES (:slipId, :lineNo, :itemNameRaw, :specRaw, :itemCodeRaw, :itemId,
                  NULL, :productionDate, :lotNo, :orderNo, :quantity, :lineStatus, :holdReason)`,
         {
           slipId,
           lineNo: i + 1,
           itemNameRaw: line.item_name,
           specRaw: line.spec,
+          itemCodeRaw: line.item_code,
           itemId,
           productionDate: parseDateTime(line.production_date),
           lotNo: line.lot_no,

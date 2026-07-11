@@ -156,6 +156,7 @@ CREATE TABLE slip_lines (
   line_no                 INTEGER       NOT NULL,            -- 伝票内の行番号
   item_name_raw           VARCHAR(200)  NOT NULL,            -- 読取そのままの品名（監査用）
   spec_raw                VARCHAR(100)  NOT NULL DEFAULT '',
+  item_code_raw           VARCHAR(50)   NOT NULL DEFAULT '', -- 読取そのままの商品コード（照合ヒント）
   item_id                 INTEGER       NULL REFERENCES items(id),
   warehouse_id            INTEGER       NULL REFERENCES warehouses(id),
   production_date         DATE          NULL,

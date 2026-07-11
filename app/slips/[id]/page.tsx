@@ -251,6 +251,7 @@ export default async function SlipDetailPage({ params, searchParams }: Props) {
               )}
               <span className="ml-auto text-xs text-neutral-400">
                 読取原文：{line.item_name_raw} {line.spec_raw}
+                {line.item_code_raw && `（商品コード ${line.item_code_raw}）`}
               </span>
             </div>
             <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
