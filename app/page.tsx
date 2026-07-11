@@ -1,10 +1,14 @@
 import Link from "next/link";
 import { db } from "@/lib/db";
 import { currentOperator, currentRole, clerkEnabled } from "@/lib/auth";
-import { uploadPdfAction, runMailIntakeAction } from "./intake-actions";
+import { runMailIntakeAction } from "./intake-actions";
 import { switchSessionAction } from "./session-actions";
+import { UploadBox } from "./upload-box";
 
 export const dynamic = "force-dynamic";
+// PDF読取（Claude API）は1件あたり数十秒かかるため、アップロードの
+// Server Action がタイムアウトしないよう上限を引き上げる
+export const maxDuration = 60;
 
 async function getCounts() {
   const rows = await db().rows<{ status: string; cnt: number }>(
@@ -45,22 +49,7 @@ export default async function Home({ searchParams }: Props) {
           <p className="text-neutral-500">
             FAXをPDF化した依頼書、またはメール添付のPDFをアップロードすると、その場で読み取り、確認フォームへ届きます。
           </p>
-          <form action={uploadPdfAction} className="space-y-3">
-            <input
-              type="file"
-              name="pdfs"
-              accept="application/pdf"
-              multiple
-              required
-              className="block w-full text-sm"
-            />
-            <button
-              type="submit"
-              className="rounded bg-blue-600 px-4 py-2 text-sm font-bold text-white hover:bg-blue-700"
-            >
-              アップロードして取込
-            </button>
-          </form>
+          <UploadBox />
         </section>
 
         <section className="space-y-3 rounded border border-neutral-300 p-4 text-sm dark:border-neutral-700">
