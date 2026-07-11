@@ -1,9 +1,9 @@
 import Link from "next/link";
 import { db } from "@/lib/db";
 import { currentOperator, currentRole, clerkEnabled } from "@/lib/auth";
-import { runMailIntakeAction } from "./intake-actions";
 import { switchSessionAction } from "./session-actions";
 import { UploadBox } from "./upload-box";
+import { MailIntakeButton } from "./mail-intake-button";
 
 export const dynamic = "force-dynamic";
 // PDF読取（Claude API）は1件あたり数十秒かかるため、アップロード・メール取込の
@@ -38,8 +38,15 @@ export default async function Home({ searchParams }: Props) {
     <div className="space-y-6">
       <h1 className="text-xl font-bold">ダッシュボード</h1>
       {intake && (
-        <p className="rounded bg-blue-50 p-2 text-sm text-blue-800 dark:bg-blue-950 dark:text-blue-200">
-          取込結果 — {intake}
+        <p className="flex items-start gap-2 rounded bg-blue-50 p-2 text-sm text-blue-800 dark:bg-blue-950 dark:text-blue-200">
+          <span className="flex-1">取込結果 — {intake}</span>
+          <Link
+            href="/"
+            aria-label="この結果表示を閉じる"
+            className="shrink-0 rounded px-2 font-bold hover:bg-blue-100 dark:hover:bg-blue-900"
+          >
+            ×
+          </Link>
         </p>
       )}
 
@@ -58,14 +65,7 @@ export default async function Home({ searchParams }: Props) {
             専用アドレス宛の未読メールを取り込みます。通常は毎日夕方に自動実行されます（Vercel Cron）。
             このボタンは任意のタイミングで回すためのバックアップです。
           </p>
-          <form action={runMailIntakeAction}>
-            <button
-              type="submit"
-              className="rounded border px-4 py-2 text-sm font-bold hover:bg-neutral-100 dark:hover:bg-neutral-800"
-            >
-              メールを今すぐ取り込む
-            </button>
-          </form>
+          <MailIntakeButton />
         </section>
       </div>
 
