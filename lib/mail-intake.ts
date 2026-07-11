@@ -80,9 +80,16 @@ export async function fetchMailIntake(): Promise<MailIntakeResult | null> {
           }
         } else {
           // 本文のみ → 自然文から抽出（まず動かし段階的に精度向上：企画書 STEP2）
+          // 送信日時も渡す：「翌日集荷」等の相対日付を絶対日付へ換算する基準になる（FB⑦）
           const bodyText = (parsed.text ?? "").trim();
+          const sentAt = parsed.date
+            ? new Date(parsed.date.getTime() + 9 * 60 * 60 * 1000)
+                .toISOString()
+                .slice(0, 16)
+                .replace("T", " ")
+            : null;
           const sourceRef = `mail: ${subject}（${from}）`;
-          const mailText = `件名: ${subject}\n差出人: ${from}\n\n${bodyText}`;
+          const mailText = `件名: ${subject}\n差出人: ${from}${sentAt ? `\n送信日時: ${sentAt}（JST）` : ""}\n\n${bodyText}`;
           const ex = await extractSlipFromText(mailText);
           results.push(await intakeExtraction(ex, sourceRef, "mail"));
         }

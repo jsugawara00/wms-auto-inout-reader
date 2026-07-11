@@ -78,6 +78,8 @@ const SYSTEM_PROMPT = `あなたは倉庫の入出庫依頼書（FAX・メール
 - 判定・確定はしない。読み取った値をそのまま抽出する。推測で値を補完しない。
 - 読めない・曖昧な箇所は無理に埋めず、note に日本語で書き、confidence を下げる。
 - 手書きの和暦年号（令和・平成）は誤読しやすい。読み分けに注意し、近年の業務文書であれば令和を優先して解釈する。自信が持てない場合は confidence を下げ、note に書く。
+- 相対的な日付表現（「翌日」「明後日」「本日」等）は、メールの送信日時や書類の依頼日を基準に絶対日付へ換算してよい。換算した場合は note に換算の根拠を明記し、confidence は high にしない。基準日が不明なら換算せず note に書く。
+- 本文と添付ファイル等で日付・数量が食い違う場合は、どちらかに決めつけず、note に両方の値を明記して confidence を low にする。
 - 入出庫依頼と無関係な文書（広告・請求書・営業案内等）は is_relevant=false とし、note に文書の種類を書く。`;
 
 const globalForAnthropic = globalThis as unknown as { anthropic?: Anthropic };
