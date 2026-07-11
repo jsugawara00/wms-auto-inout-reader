@@ -20,12 +20,9 @@ export default async function WarehouseMasterPage({ searchParams }: Props) {
       <div className="flex items-baseline justify-between">
         <h1 className="text-xl font-bold">倉庫マスタ</h1>
         <span className="space-x-3 text-sm">
-          <a href="/masters/shippers" className="text-blue-600 underline dark:text-blue-400">
-            荷主マスタへ
-          </a>
-          <a href="/masters/items" className="text-blue-600 underline dark:text-blue-400">
-            商品マスタへ
-          </a>
+          <a href="/masters/shippers" className="text-blue-600 underline dark:text-blue-400">荷主マスタへ</a>
+          <a href="/masters/items" className="text-blue-600 underline dark:text-blue-400">商品マスタへ</a>
+          <a href="/masters/tariffs" className="text-blue-600 underline dark:text-blue-400">タリフへ</a>
         </span>
       </div>
 

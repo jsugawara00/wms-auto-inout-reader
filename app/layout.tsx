@@ -45,6 +45,9 @@ function Shell({ children }: { children: React.ReactNode }) {
             <Link href="/closing" className="hover:underline">
               月末確定
             </Link>
+            <Link href="/billing" className="hover:underline">
+              請求
+            </Link>
             <Link href="/masters/shippers" className="hover:underline">
               荷主マスタ
             </Link>

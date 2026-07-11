@@ -99,9 +99,11 @@ export default async function ShipperMasterPage({ searchParams }: Props) {
     <div className="space-y-6">
       <div className="flex items-baseline justify-between">
         <h1 className="text-xl font-bold">荷主マスタ</h1>
-        <a href="/masters/items" className="text-sm text-blue-600 underline dark:text-blue-400">
-          商品マスタへ →
-        </a>
+        <span className="space-x-3 text-sm">
+          <a href="/masters/items" className="text-blue-600 underline dark:text-blue-400">商品マスタへ</a>
+          <a href="/masters/warehouses" className="text-blue-600 underline dark:text-blue-400">倉庫マスタへ</a>
+          <a href="/masters/tariffs" className="text-blue-600 underline dark:text-blue-400">タリフへ</a>
+        </span>
       </div>
 
       {saved && (
