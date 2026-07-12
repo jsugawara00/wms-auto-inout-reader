@@ -12,12 +12,13 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
 export async function GET(request: Request): Promise<Response> {
+  // 認可は fail-closed：CRON_SECRET 未設定なら常に拒否する（設定漏れで公開されない）。
+  // Vercel Cron は Authorization: Bearer <CRON_SECRET> を自動付与する。
+  // ローカル/プレビューで叩くときは CRON_SECRET を設定して同じヘッダを付ける。
   const secret = process.env.CRON_SECRET;
-  if (secret) {
-    const auth = request.headers.get("authorization");
-    if (auth !== `Bearer ${secret}`) {
-      return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401 });
-    }
+  const auth = request.headers.get("authorization");
+  if (!secret || auth !== `Bearer ${secret}`) {
+    return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401 });
   }
 
   try {
