@@ -33,6 +33,9 @@ function Shell({ children }: { children: React.ReactNode }) {
             <Link href="/" className="font-bold">
               入出庫・在庫管理
             </Link>
+            <Link href="/guide" className="hover:underline">
+              使い方
+            </Link>
             <Link href="/slips" className="hover:underline">
               伝票（確認フォーム）
             </Link>

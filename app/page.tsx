@@ -36,7 +36,12 @@ export default async function Home({ searchParams }: Props) {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-xl font-bold">ダッシュボード</h1>
+      <div className="flex items-baseline justify-between">
+        <h1 className="text-xl font-bold">ダッシュボード</h1>
+        <Link href="/guide" className="text-sm text-blue-600 underline dark:text-blue-400">
+          はじめての方へ：使い方ガイド →
+        </Link>
+      </div>
       {intake && (
         <p className="flex items-start gap-2 rounded bg-blue-50 p-2 text-sm text-blue-800 dark:bg-blue-950 dark:text-blue-200">
           <span className="flex-1">取込結果 — {intake}</span>
