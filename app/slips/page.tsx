@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { listSlips } from "@/lib/data";
 import type { SlipStatus } from "@/lib/types";
+import { StatusBadge } from "../status-badge";
 
 export const dynamic = "force-dynamic";
 
@@ -10,6 +11,14 @@ const STATUS_LABEL: Record<string, string> = {
   done: "完了",
   hold: "保留",
 };
+
+// 状態→ドット色（保留=赤＝要確認、未処理=琥珀、確認済=青、完了=グレー）
+const STATUS_DOT = {
+  unprocessed: "amber",
+  hold: "red",
+  confirmed: "blue",
+  done: "neutral",
+} as const;
 
 const TYPE_LABEL = { inbound: "入庫", outbound: "出庫" } as const;
 const SOURCE_LABEL = { fax: "FAX", mail: "メール" } as const;
@@ -76,17 +85,11 @@ export default async function SlipsPage({ searchParams }: Props) {
                   </td>
                   <td className="py-2 pr-3">{TYPE_LABEL[s.slip_type]}</td>
                   <td className="py-2 pr-3">
-                    <span
-                      className={
-                        s.status === "unprocessed"
-                          ? "text-amber-600"
-                          : s.status === "hold"
-                            ? "text-red-600"
-                            : "text-neutral-500"
-                      }
-                    >
-                      {STATUS_LABEL[s.status]}
-                    </span>
+                    <StatusBadge
+                      color={STATUS_DOT[s.status]}
+                      label={STATUS_LABEL[s.status]}
+                      strong={s.status === "unprocessed" || s.status === "hold"}
+                    />
                   </td>
                   <td className="py-2 pr-3">{s.shipper_name ?? "（未確定）"}</td>
                   <td className="py-2 pr-3 font-mono">{s.slip_number || "―"}</td>

@@ -3,6 +3,7 @@ import { calcMonthlyBilling, listInvoices, type BillingPreview } from "@/lib/bil
 import { listShippers } from "@/lib/data";
 import { currentRole } from "@/lib/auth";
 import { createDraftAction } from "./actions";
+import { StatusBadge } from "../status-badge";
 
 export const dynamic = "force-dynamic";
 
@@ -220,9 +221,9 @@ export default async function BillingPage({ searchParams }: Props) {
                     <td className="py-1 pr-3">{inv.shipper_name}</td>
                     <td className="py-1 pr-3">
                       {inv.status === "issued" ? (
-                        <span className="text-neutral-500">発行済み</span>
+                        <StatusBadge color="neutral" label="発行済み" />
                       ) : (
-                        <span className="font-bold text-amber-600">確認中</span>
+                        <StatusBadge color="amber" label="確認中" strong />
                       )}
                     </td>
                     <td className="py-1 pr-3 text-right font-mono">{Number(inv.total_amount).toLocaleString()}</td>
