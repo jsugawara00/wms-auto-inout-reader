@@ -105,61 +105,17 @@ flowchart LR
 
 ---
 
-## セットアップ（ローカルで動かす）
+## 👤 作者・お問い合わせ
 
-```bash
-# 1. 依存をインストール
-npm install
+**作者**: Toika（トイカ）
 
-# 2. ローカル Postgres を起動（docker）
-docker compose up -d
+「問うて確かめる」を大切に、断定しすぎず、使う人の余白を残すものづくりを目指しています。
 
-# 3. 環境変数（.env.example を参照）。DATABASE_URL は docker の既定値で動きます
-cp .env.example .env.local
+**お問い合わせ**:
 
-# 4. スキーマ適用＋デモシード投入
-npm run db:apply
-npm run db:seed
+アプリに関するご質問・ご意見・お仕事のご相談などがありましたら、お気軽にご連絡ください。
 
-# 5. 開発サーバー
-npm run dev   # http://localhost:3000
-```
-
-環境変数は `.env.example` を参照。未設定でも動く項目が多く、段階的に有効化できます。
-
-- `DATABASE_URL`（必須）: Postgres 接続文字列
-- `ANTHROPIC_API_KEY`: PDF・メール本文の読取
-- `BLOB_READ_WRITE_TOKEN` / `BLOB_STORE_ID`: Vercel Blob（未設定なら原本保管をスキップ）
-- `SLACK_WEBHOOK_URL`: 通知（未設定ならスキップ）
-- `GMAIL_USER` / `GMAIL_APP_PASSWORD` / `GMAIL_INTAKE_ALIAS`: メール取込（IMAP）
-- `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` / `CLERK_SECRET_KEY`: 認証（未設定なら担当者コード方式）
-- `CRON_SECRET`: Vercel Cron の認可トークン
-- `APP_BASE_URL`: 通知リンクの起点
-
----
-
-## 検証
-
-ロジックは実DB（ローカル docker）に対する検証スクリプトで担保しています。
-
-```bash
-npm run typecheck        # 型チェック
-npm run verify:core      # 取込〜確定〜在庫〜入出庫日〜月末（表示値修正含む）
-npm run verify:masters   # マスタ管理（CRUD・統合マージ）
-npm run verify:billing   # 請求（三期制の計算・確認フォーム・発行）
-```
-
----
-
-## デプロイ（Vercel）
-
-1. Vercel Marketplace から **Neon Postgres** を追加（`DATABASE_URL` が自動設定）。
-   Neon 側で `db/schema.sql` を適用（全テーブルを同期済み。既存DBの更新は `db/migrations/`）。
-2. **Vercel Blob** を追加（PDF原本の保管）。
-3. **Clerk**（任意）を追加。ユーザーの `publicMetadata` に
-   `{ "operatorCode": "op01", "role": "admin" }` を設定。サインアップは Restricted（招待制）推奨。
-4. `ANTHROPIC_API_KEY`・`CRON_SECRET` ほか必要な環境変数を設定。
-5. デプロイ。メール取込は `vercel.json` の Cron 設定により毎日実行されます。
+📧 `jumpdevelop00@gmail.com` （左記アドレスをコピーしてご連絡ください）
 
 ---
 
