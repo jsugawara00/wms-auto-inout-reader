@@ -13,7 +13,9 @@ import { db, withTransaction } from "./db";
 // - タリフ解決は 品目一致 → 荷主既定（item_id IS NULL）の順。無ければ金額0で
 //   警告に載せる（黙って落とさない。担当がタリフを登録して再計算する）。
 // - 金額は円未満切り捨て。
-// - 請求書の確定は月末表と同じ流儀: 原本不変・二重確定拒否・履歴記録。
+// - 請求書は締め/発行のたびに履歴を残すが、確定（不変ロック）はしない: 発行後も
+//   「修正のため再開」で draft に戻して再編集→再発行できる（中小の実態＝締めた後にも
+//   荷役料・例外請求が動く）。行単位の原本 amount は不変のまま調整層を重ねる点は従来通り。
 
 export interface TariffRow {
   id: number;
@@ -268,7 +270,9 @@ export async function calcMonthlyBilling(
 // - 締める＝計算値を下書き(draft)として保存（原本。amount は不変）
 // - 確認フォームで：行金額の調整（adjusted_amount＝表示調整層）／例外行(manual)の追加・削除／
 //   在庫を直した後の再計算（recompute）ができる（すべて draft のときのみ）
-// - 発行(issue)で issued に。以後は不変・印刷可（月末表・表示値修正と同じ思想）
+// - 発行(issue)で issued に＝印刷・送付用の締め。
+// - 発行後も reopenInvoice で draft に戻して再編集→再発行できる（不変ロックはしない）。
+//   中小の実態：月末に締めても翌月に荷主要望で荷役料・例外請求が動くため。理由必須・履歴記録。
 // ------------------------------------------------------------------
 
 export type InvoiceActionResult =
@@ -386,7 +390,7 @@ export async function recomputeDraft(input: {
   return withTransaction(async (conn): Promise<InvoiceActionResult> => {
     const inv = await loadDraft(conn, invoiceId);
     if (!inv) return { ok: false, message: "請求書が見つかりません。" };
-    if (inv.status !== "draft") return { ok: false, message: "発行済みの請求書は再計算できません（不変）。" };
+    if (inv.status !== "draft") return { ok: false, message: "発行済みの請求書です。修正するには「修正のため再開」で締めを解いてください。" };
 
     const preview = await calcMonthlyBilling(inv.shipper_id, inv.invoice_month);
     if ("error" in preview) return { ok: false, message: preview.error };
@@ -428,7 +432,7 @@ export async function adjustInvoiceLine(input: {
     );
     const row = rows[0];
     if (!row) return { ok: false, message: "明細が見つかりません。" };
-    if (row.status !== "draft") return { ok: false, message: "発行済みの請求書は調整できません（不変）。" };
+    if (row.status !== "draft") return { ok: false, message: "発行済みの請求書です。修正するには「修正のため再開」で締めを解いてください。" };
 
     await conn.exec(
       "UPDATE invoice_lines SET adjusted_amount = :adjustedAmount, adjust_reason = :reason WHERE id = :lineId",
@@ -460,7 +464,7 @@ export async function addManualLine(input: {
   return withTransaction(async (conn): Promise<InvoiceActionResult> => {
     const inv = await loadDraft(conn, invoiceId);
     if (!inv) return { ok: false, message: "請求書が見つかりません。" };
-    if (inv.status !== "draft") return { ok: false, message: "発行済みの請求書には追加できません（不変）。" };
+    if (inv.status !== "draft") return { ok: false, message: "発行済みの請求書です。修正するには「修正のため再開」で締めを解いてください。" };
 
     const amount = floor(quantity * unitPrice);
     const maxRows = await conn.rows<{ n: number }>(
@@ -496,7 +500,7 @@ export async function deleteManualLine(input: {
     );
     const row = rows[0];
     if (!row) return { ok: false, message: "明細が見つかりません。" };
-    if (row.status !== "draft") return { ok: false, message: "発行済みの請求書は編集できません（不変）。" };
+    if (row.status !== "draft") return { ok: false, message: "発行済みの請求書です。修正するには「修正のため再開」で締めを解いてください。" };
     if (row.category !== "manual") return { ok: false, message: "計算された明細は削除できません（調整で対応してください）。" };
 
     await conn.exec("DELETE FROM invoice_lines WHERE id = :lineId", { lineId });
@@ -510,7 +514,7 @@ export async function deleteManualLine(input: {
   });
 }
 
-/** 発行：draft → issued。以後は不変・印刷可 */
+/** 発行：draft → issued。印刷・送付用の締め（発行後も再開すれば再編集できる） */
 export async function issueInvoice(input: {
   invoiceId: number;
   operator: string;
@@ -519,7 +523,7 @@ export async function issueInvoice(input: {
   return withTransaction(async (conn): Promise<InvoiceActionResult> => {
     const inv = await loadDraft(conn, invoiceId);
     if (!inv) return { ok: false, message: "請求書が見つかりません。" };
-    if (inv.status === "issued") return { ok: false, message: "この請求書は既に発行済みです（不変）。" };
+    if (inv.status === "issued") return { ok: false, message: "この請求書は既に発行済みです。修正するには「修正のため再開」で締めを解いてください。" };
 
     await recalcInvoiceTotal(conn, invoiceId);
     await conn.exec(
@@ -532,9 +536,34 @@ export async function issueInvoice(input: {
     await conn.exec(
       `INSERT INTO edit_logs (target_type, target_id, action, reason, operator)
        VALUES ('invoice', :invoiceId, 'finalize', :reason, :operator)`,
-      { invoiceId, reason: `請求書を発行（確認完了・以後不変・合計 ${totalRows[0].total_amount} 円）`, operator }
+      { invoiceId, reason: `請求書を発行（確認完了・合計 ${totalRows[0].total_amount} 円）`, operator }
     );
-    return { ok: true, invoiceId, message: `請求書を発行しました（印刷可能・合計 ${Number(totalRows[0].total_amount).toLocaleString()} 円）。` };
+    return { ok: true, invoiceId, message: `請求書を発行しました（印刷可能・合計 ${Number(totalRows[0].total_amount).toLocaleString()} 円）。必要なら後から再開して修正できます。` };
+  });
+}
+
+/** 再開：issued → draft。締めを解いて再編集できるようにする（理由必須・履歴）。
+ *  中小の実態＝締めた後に荷役料・例外請求が動くための処置。発行情報(issued_by/at)は
+ *  再発行時に上書きされるまで前回の値を残す。 */
+export async function reopenInvoice(input: {
+  invoiceId: number;
+  reason: string;
+  operator: string;
+}): Promise<InvoiceActionResult> {
+  const { invoiceId, reason, operator } = input;
+  if (!reason.trim()) return { ok: false, message: "再開理由は必須です。" };
+  return withTransaction(async (conn): Promise<InvoiceActionResult> => {
+    const inv = await loadDraft(conn, invoiceId);
+    if (!inv) return { ok: false, message: "請求書が見つかりません。" };
+    if (inv.status !== "issued") return { ok: false, message: "この請求書は発行前です（すでに編集できます）。" };
+
+    await conn.exec("UPDATE invoices SET status = 'draft' WHERE id = :invoiceId", { invoiceId });
+    await conn.exec(
+      `INSERT INTO edit_logs (target_type, target_id, action, reason, operator)
+       VALUES ('invoice', :invoiceId, 'update', :reason, :operator)`,
+      { invoiceId, reason: `発行済み請求書を修正のため再開：${reason.trim()}`, operator }
+    );
+    return { ok: true, invoiceId, message: "請求書を再開しました。内容を修正して、あらためて発行してください。" };
   });
 }
 

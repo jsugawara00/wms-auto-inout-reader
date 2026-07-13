@@ -7,6 +7,7 @@ import {
   deleteManualLineAction,
   recomputeAction,
   issueAction,
+  reopenAction,
 } from "./actions";
 
 export const dynamic = "force-dynamic";
@@ -123,6 +124,27 @@ export default async function InvoiceDetailPage({ params, searchParams }: Props)
         </p>
       )}
 
+      {/* 発行済み: 修正のため再開（admin のみ・印刷には出さない） */}
+      {!isDraft && isAdmin && (
+        <section className="space-y-2 rounded border border-neutral-300 p-4 print:hidden dark:border-neutral-700">
+          <h3 className="font-bold">修正のため再開する</h3>
+          <p className="text-xs text-neutral-500">
+            締めた後でも、荷主要望による荷役料・例外請求の追加や金額の調整が必要になることがあります。
+            再開すると締めを解いて再編集でき、直したらあらためて発行します（理由は履歴に残ります）。
+          </p>
+          <form action={reopenAction} className="flex flex-wrap items-end gap-2">
+            <input type="hidden" name="invoiceId" value={invoice.id} />
+            <label className="flex-1">
+              再開理由（必須）
+              <input name="reason" required placeholder="例：8/1 に荷主要望で特別対応費を追加" className="ml-1 w-2/3 rounded border px-1 py-0.5 dark:bg-neutral-900" />
+            </label>
+            <button type="submit" className="rounded border border-amber-400 px-3 py-1 text-amber-700 hover:bg-amber-50 dark:text-amber-300 dark:hover:bg-amber-950">
+              🔓 修正のため再開する
+            </button>
+          </form>
+        </section>
+      )}
+
       {/* タリフ未設定などの警告（社内向け・印刷には出さない） */}
       {invoice.note && (
         <p className="rounded bg-amber-50 p-2 text-sm text-amber-700 print:hidden dark:bg-amber-950 dark:text-amber-300">
@@ -237,7 +259,7 @@ export default async function InvoiceDetailPage({ params, searchParams }: Props)
               <input type="hidden" name="invoiceId" value={invoice.id} />
               <label className="flex items-start gap-2 text-sm">
                 <input type="checkbox" name="acknowledged" className="mt-1" />
-                <span>この内容で発行します。<strong>発行後の請求書は不変</strong>であることを理解しています。</span>
+                <span>この内容で発行します（印刷・送付用に締めます）。<strong>必要なら後から「修正のため再開」で直せます</strong>。</span>
               </label>
               <button type="submit" className="rounded bg-blue-600 px-4 py-2 text-sm font-bold text-white hover:bg-blue-700">
                 この内容で発行する

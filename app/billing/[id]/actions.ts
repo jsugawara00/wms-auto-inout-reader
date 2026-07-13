@@ -8,6 +8,7 @@ import {
   deleteManualLine,
   recomputeDraft,
   issueInvoice,
+  reopenInvoice,
 } from "@/lib/billing";
 import { currentOperator, requireMasterAdmin, rememberOperator } from "@/lib/auth";
 
@@ -77,9 +78,22 @@ export async function issueAction(formData: FormData): Promise<void> {
   const invoiceId = Number(formData.get("invoiceId"));
   const operator = await guardAdmin(invoiceId);
   if (formData.get("acknowledged") !== "on") {
-    redirect(`/billing/${invoiceId}?error=${encodeURIComponent("発行後は不変であることへの同意チェックが必要です。")}`);
+    redirect(`/billing/${invoiceId}?error=${encodeURIComponent("発行の確認チェックが必要です。")}`);
   }
   const result = await issueInvoice({ invoiceId, operator });
+  revalidatePath(`/billing/${invoiceId}`);
+  revalidatePath("/billing");
+  back(invoiceId, result);
+}
+
+export async function reopenAction(formData: FormData): Promise<void> {
+  const invoiceId = Number(formData.get("invoiceId"));
+  const operator = await guardAdmin(invoiceId);
+  const result = await reopenInvoice({
+    invoiceId,
+    reason: String(formData.get("reason") ?? ""),
+    operator,
+  });
   revalidatePath(`/billing/${invoiceId}`);
   revalidatePath("/billing");
   back(invoiceId, result);

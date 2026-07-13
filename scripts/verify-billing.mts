@@ -15,6 +15,7 @@ import {
   addManualLine,
   deleteManualLine,
   issueInvoice,
+  reopenInvoice,
   getInvoice,
   listInvoices,
   lineEffectiveAmount,
@@ -177,7 +178,7 @@ console.log("\n— 再計算：計算行は作り直し・例外行は保持 —
   check("合計は再計算値（21560+3000=24560）", Number(after!.invoice.total_amount) === 24560, after!.invoice.total_amount);
 }
 
-console.log("\n— 発行（issued・以後不変） —");
+console.log("\n— 発行（issued：印刷・送付用の締め。編集は再開が必要） —");
 {
   const r = await issueInvoice({ invoiceId, operator: "op02" });
   check("発行成功", r.ok === true, r);
@@ -186,13 +187,45 @@ console.log("\n— 発行（issued・以後不変） —");
   check("発行者が記録される", inv!.invoice.issued_by === "op02", inv!.invoice.issued_by);
 
   const a = await adjustInvoiceLine({ lineId: inv!.lines[0].id, adjustedAmount: 1, reason: "x", operator: "op01" });
-  check("発行済みは調整不可（不変）", a.ok === false, a);
+  check("発行済みは（再開せずに）調整不可", a.ok === false, a);
   const m = await addManualLine({ invoiceId, itemName: "後出し", spec: "", quantity: 1, unitPrice: 1, operator: "op01" });
-  check("発行済みは例外行追加不可", m.ok === false, m);
+  check("発行済みは（再開せずに）例外行追加不可", m.ok === false, m);
   const r2 = await issueInvoice({ invoiceId, operator: "op02" });
   check("二重発行は拒否", r2.ok === false, r2);
   const list = await listInvoices();
   check("請求書一覧に載る", list.length === 1 && list[0].shipper_name === "マルノウ食品株式会社");
+}
+
+console.log("\n— 再開（issued→draft）：締め後の荷役料・例外追加に対応 —");
+{
+  const totalBefore = Number((await getInvoice(invoiceId))!.invoice.total_amount);
+
+  const noReason = await reopenInvoice({ invoiceId, reason: "  ", operator: "op02" });
+  check("再開は理由必須", noReason.ok === false, noReason);
+
+  const r = await reopenInvoice({ invoiceId, reason: "8/1 荷主要望で特別対応費を追加", operator: "op02" });
+  check("再開成功", r.ok === true, r);
+  const inv = await getInvoice(invoiceId);
+  check("status は draft に戻る", inv!.invoice.status === "draft", inv!.invoice.status);
+  check("前回の発行者は履歴として残る", inv!.invoice.issued_by === "op02", inv!.invoice.issued_by);
+
+  // 再開後は例外行の追加ができる
+  const m = await addManualLine({ invoiceId, itemName: "特別対応費", spec: "", quantity: 1, unitPrice: 5000, operator: "op01" });
+  check("再開後は例外行を追加できる", m.ok === true, m);
+  const afterAdd = await getInvoice(invoiceId);
+  check("合計に算入される（+5000）", Number(afterAdd!.invoice.total_amount) === totalBefore + 5000, afterAdd!.invoice.total_amount);
+
+  // 再発行できる（発行者を更新）
+  const r2 = await issueInvoice({ invoiceId, operator: "op01" });
+  check("再発行成功", r2.ok === true, r2);
+  const reissued = await getInvoice(invoiceId);
+  check("status は再び issued", reissued!.invoice.status === "issued", reissued!.invoice.status);
+  check("発行者が最新（op01）に更新される", reissued!.invoice.issued_by === "op01", reissued!.invoice.issued_by);
+
+  // 再開は issued のときだけ許可（draft では拒否）
+  await reopenInvoice({ invoiceId, reason: "戻す", operator: "op01" });
+  const badReopen = await reopenInvoice({ invoiceId, reason: "二重再開", operator: "op01" });
+  check("draft の請求書は再開できない", badReopen.ok === false, badReopen);
 }
 
 console.log(`\n結果: ${passed} passed / ${failed} failed`);
