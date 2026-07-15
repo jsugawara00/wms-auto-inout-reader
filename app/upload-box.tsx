@@ -8,7 +8,7 @@ import { uploadPdfAction } from "./intake-actions";
 // - 大きなクリック領域（点線ボックス）で「ここを押して選ぶ」を明示
 // - 送信中はスピナー＋「読み取り中…」を表示（Claude読取に数十秒かかるため）
 
-function SubmitArea({ fileCount }: { fileCount: number }) {
+function SubmitArea({ fileCount, disabled }: { fileCount: number; disabled?: boolean }) {
   const { pending } = useFormStatus();
   return (
     <div className="space-y-2">
@@ -23,7 +23,7 @@ function SubmitArea({ fileCount }: { fileCount: number }) {
       )}
       <button
         type="submit"
-        disabled={pending || fileCount === 0}
+        disabled={pending || fileCount === 0 || disabled}
         className="rounded bg-blue-600 px-4 py-2 text-sm font-bold text-white hover:bg-blue-700 disabled:opacity-50"
       >
         {pending
@@ -36,11 +36,31 @@ function SubmitArea({ fileCount }: { fileCount: number }) {
   );
 }
 
-export function UploadBox() {
+// remaining: デモゲストの残り読取回数。null＝実ユーザー（無制限・案内なし）。
+export function UploadBox({ remaining }: { remaining?: number | null }) {
   const [fileNames, setFileNames] = useState<string[]>([]);
+  const limited = typeof remaining === "number";
+  const exhausted = limited && remaining <= 0;
 
   return (
     <form action={uploadPdfAction} className="space-y-3">
+      {limited && (
+        <p
+          className={
+            exhausted
+              ? "rounded bg-neutral-100 p-2 text-xs text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300"
+              : "rounded bg-amber-50 p-2 text-xs text-amber-800 dark:bg-amber-950 dark:text-amber-200"
+          }
+        >
+          {exhausted ? (
+            "デモでお試しいただける読取の上限に達しました。続けてお試しの場合はお問い合わせください（API利用料がかかるため、個人開発でのお願いです）。"
+          ) : (
+            <>
+              デモでお試しいただける読取は <strong>残り {remaining} 回</strong>です。
+            </>
+          )}
+        </p>
+      )}
       <label className="flex cursor-pointer flex-col items-center justify-center gap-1 rounded-lg border-2 border-dashed border-blue-300 bg-blue-50/50 px-4 py-8 text-center transition-colors hover:border-blue-500 hover:bg-blue-50 dark:border-blue-800 dark:bg-blue-950/30 dark:hover:border-blue-600">
         <input
           type="file"
@@ -71,7 +91,7 @@ export function UploadBox() {
         </ul>
       )}
 
-      <SubmitArea fileCount={fileNames.length} />
+      <SubmitArea fileCount={fileNames.length} disabled={exhausted} />
     </form>
   );
 }

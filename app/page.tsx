@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { db } from "@/lib/db";
 import { currentOperator, currentRole, clerkEnabled } from "@/lib/auth";
+import { remainingGuestReads } from "@/lib/guest-limit";
 import { switchSessionAction } from "./session-actions";
 import { UploadBox } from "./upload-box";
 import { MailIntakeButton } from "./mail-intake-button";
@@ -23,11 +24,13 @@ type Props = { searchParams: Promise<{ intake?: string }> };
 
 export default async function Home({ searchParams }: Props) {
   const { intake } = await searchParams;
-  const [counts, operator, role] = await Promise.all([
+  const [counts, operator, role, guestRemaining] = await Promise.all([
     getCounts(),
     currentOperator(),
     currentRole(),
+    remainingGuestReads(),
   ]);
+  const isGuest = guestRemaining !== null; // null＝実ユーザー（無制限）
   const cards = [
     { label: "未処理", value: counts["unprocessed"] ?? 0, href: "/slips?status=unprocessed" },
     { label: "保留", value: counts["hold"] ?? 0, href: "/slips?status=hold" },
@@ -61,17 +64,19 @@ export default async function Home({ searchParams }: Props) {
           <p className="text-neutral-500">
             FAXをPDF化した依頼書、またはメール添付のPDFをアップロードすると、その場で読み取り、確認フォームへ届きます。
           </p>
-          <UploadBox />
+          <UploadBox remaining={guestRemaining} />
         </section>
 
-        <section className="space-y-3 rounded border border-neutral-300 p-4 text-sm dark:border-neutral-700">
-          <h2 className="font-bold">メール取込（手動実行）</h2>
-          <p className="text-neutral-500">
-            専用アドレス宛の未読メールを取り込みます。通常は毎日夕方に自動実行されます（Vercel Cron）。
-            このボタンは任意のタイミングで回すためのバックアップです。
-          </p>
-          <MailIntakeButton />
-        </section>
+        {isGuest ? null : (
+          <section className="space-y-3 rounded border border-neutral-300 p-4 text-sm dark:border-neutral-700">
+            <h2 className="font-bold">メール取込（手動実行）</h2>
+            <p className="text-neutral-500">
+              専用アドレス宛の未読メールを取り込みます。通常は毎日夕方に自動実行されます（Vercel Cron）。
+              このボタンは任意のタイミングで回すためのバックアップです。
+            </p>
+            <MailIntakeButton />
+          </section>
+        )}
       </div>
 
       <div className="grid grid-cols-3 gap-4">
