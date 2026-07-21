@@ -1,21 +1,39 @@
-MIT License
+All Rights Reserved
 
 Copyright (c) 2026 jsugawara00
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+このリポジトリのソースコード・ドキュメント・画像その他一切の内容（以下「本ソフトウェア」）
+の著作権は、著作権者に全面的に留保されます。
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+本ソフトウェアは、内容の閲覧および技術的な参考（ポートフォリオとしての確認）のために
+公開されているものであり、以下の行為を許諾するものではありません。
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+  - 複製、改変、翻案
+  - 再配布、公開、頒布
+  - サブライセンスの付与
+  - 販売その他の商用利用
+  - 本ソフトウェアの全部または一部を用いたサービスの提供
+
+上記の行為を希望される場合は、事前に著作権者へご連絡のうえ、書面による許諾を得てください。
+連絡先: info@toika.jp
+
+本ソフトウェアは現状有姿で提供され、著作権者はその利用に関して明示・黙示を問わず
+いかなる保証も行わず、いかなる損害についても責任を負いません。
+
+---
+
+All rights to the source code, documentation, images, and all other contents of this
+repository (the "Software") are fully reserved by the copyright holder.
+
+The Software is made publicly visible for the sole purpose of inspection and technical
+reference (as a portfolio). No permission is granted to copy, modify, adapt, redistribute,
+publish, sublicense, sell, or otherwise use the Software, in whole or in part, including
+for the operation of any service.
+
+For any such use, prior written permission from the copyright holder is required.
+Contact: info@toika.jp
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED. IN NO
+EVENT SHALL THE COPYRIGHT HOLDER BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
